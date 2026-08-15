@@ -51,8 +51,7 @@ the fact. Telemetry lands in `LAW-Cyber-Range` for analysis.
 **1. Deploy Windows 11 VM with public IP**
 Named `CORP-XXX-YYY` to look like a real asset, not a lab.
 
-![VM overview](<img width="982" height="568" alt="image" src="https://github.com/user-attachments/assets/adf5cd61-3c21-4ed3-8b5e-5249ddcdf54e" />
-)
+![VM overview](img width="982" height="568" alt="image" src="https://github.com/user-attachments/assets/adf5cd61-3c21-4ed3-8b5e-5249ddcdf54e")
 
 **2. Deny all inbound traffic from the internet**
 The core control of this phase — and the one reversed in Phase 5.
