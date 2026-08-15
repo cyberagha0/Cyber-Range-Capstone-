@@ -44,4 +44,42 @@ the fact. Telemetry lands in `LAW-Cyber-Range` for analysis.
 ### Honeypot Architecture 
 <img width="1083" height="709" alt="image" src="https://github.com/user-attachments/assets/708f6f78-82a7-440d-9734-30b49429a414" />
 
+## Phase 1 — Harden
+
+**Goal:** Deploy the VM, seal it from the internet, confirm telemetry — before any control is loosened.
+
+**1. Deploy Windows 11 VM with public IP**
+Named `CORP-XXX-YYY` to look like a real asset, not a lab.
+
+![VM overview](img/01-vm-overview.png)
+
+**2. Deny all inbound traffic from the internet**
+The core control of this phase — and the one reversed in Phase 5.
+
+![NSG inbound rules](img/02-nsg-inbound.png)
+
+**3. Onboard to Microsoft Defender for Endpoint**
+
+![MDE device page](img/03-mde-onboarded.png)
+
+**4. Verify telemetry in `DeviceInfo`**
+
+```kusto
+DeviceInfo
+| where DeviceName startswith "CORP-"
+| top 10 by Timestamp desc
+```
+
+![DeviceInfo results](img/04-deviceinfo.png)
+
+---
+
+- [x] VM deployed, public IP assigned
+- [x] All inbound internet traffic denied
+- [x] MDE onboarded and returning rows in `DeviceInfo`
+
+> Egress not yet restricted — lock down before Phase 5.
+
+**Next:** Phase 2 — Instrument · telemetry into `LAW-Cyber-Range`
+
 
