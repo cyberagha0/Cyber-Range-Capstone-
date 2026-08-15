@@ -41,6 +41,7 @@ the fact. Telemetry lands in `LAW-Cyber-Range` for analysis.
 | 4 | **Detect** | Author ATT&CK-mapped analytics rules | Detection rule set + KQL |
 | 5 | **Weaken & Expose** | Reduce controls, open to the internet, wait | Live incident + investigation |
 
-### Jump to
+### Honeypot Architecture 
+<img width="1083" height="709" alt="image" src="https://github.com/user-attachments/assets/708f6f78-82a7-440d-9734-30b49429a414" />
 
-[Architecture](#architecture) · [Build & Hardening](#build--hardening) · [Telemetry](#telemetry) · [Baseline](#baseline) · [Detection Rules](#detection-rules) · [Incident Findings](#incident-findings)
+
