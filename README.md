@@ -49,18 +49,18 @@ the fact. Telemetry lands in `LAW-Cyber-Range` for analysis.
 **Goal:** Deploy the VM, seal it from the internet, confirm telemetry — before any control is loosened.
 
 **1. Deploy Windows 11 VM with public IP**
-Named `CORP-XXX-YYY` to look like a real asset, not a lab.
+Named `CORP-SDA1-HS12` to look like a real asset, not a lab.
+<img width="976" height="587" alt="image" src="https://github.com/user-attachments/assets/95813954-7b00-4f3b-be60-eb04679e5e9a" />
 
-![VM overview](img width="982" height="568" alt="image" src="https://github.com/user-attachments/assets/adf5cd61-3c21-4ed3-8b5e-5249ddcdf54e")
 
 **2. Deny all inbound traffic from the internet**
 The core control of this phase — and the one reversed in Phase 5.
+<img width="936" height="451" alt="image" src="https://github.com/user-attachments/assets/90a06231-f7af-4076-8832-41677dae977f" />
 
-![NSG inbound rules](img/02-nsg-inbound.png)
 
 **3. Onboard to Microsoft Defender for Endpoint**
+<img width="989" height="592" alt="image" src="https://github.com/user-attachments/assets/10599074-bbf7-4c36-b073-063214bee861" />
 
-![MDE device page](img/03-mde-onboarded.png)
 
 **4. Verify telemetry in `DeviceInfo`**
 
@@ -70,7 +70,7 @@ DeviceInfo
 | top 10 by Timestamp desc
 ```
 
-![DeviceInfo results](img/04-deviceinfo.png)
+<img width="978" height="687" alt="image" src="https://github.com/user-attachments/assets/6ca1214e-b4ed-4903-b58c-ac65d2a9ee8a" />
 
 ---
 
