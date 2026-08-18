@@ -94,7 +94,6 @@ Defender tells us what happens *on* the box — processes, logons, connections. 
 A deallocated VM ships nothing and throws no error. Most common cause of an empty table 30 minutes later.
 
 <!-- SCREENSHOT: VM overview blade — hostname CORP-SDA1-HS12 with Status: Running -->
-<img width="641" height="342" alt="image" src="https://github.com/user-attachments/assets/85e9908b-6560-4ef7-9e8b-6e3dae13fe79" />
 
 **2. Confirm existing telemetry is current**
 
@@ -121,5 +120,54 @@ DeviceInfo
 
 The record delimiter matters more than it looks — MySQL writes multi-line entries, and splitting on the timestamp keeps one query event as one row instead of shredding it across several. A typo in the file pattern deploys cleanly and silently watches nothing.
 
-<!-- SCREENSHOT: DCR data source config showing file pattern, table name,
+<!-- SCREENSHOT: DCR data source config showing file pattern, table name, delimiter, timestamp format -->
 
+**4. Set the destination to `LAW-Cyber-Range`**
+
+Same workspace as the Defender telemetry, so Phase 4 detections can correlate database activity against process and logon events in a single query.
+
+<!-- SCREENSHOT: DCR Destination tab with LAW-Cyber-Range selected -->
+
+**5. Verify the Azure Monitor Agent installed**
+
+Creating the DCR triggers the extension install automatically. A failed install is a silent dead end, so confirm rather than assume.
+
+**VM → Settings → Extensions + applications → `AzureMonitorWindowsAgent`**
+
+<!-- SCREENSHOT: Extensions blade showing AzureMonitorWindowsAgent, status Succeeded -->
+
+**6. Generate activity and verify ingestion**
+
+Make test connections and run queries against MySQL first — the general log has nothing to say otherwise. First ingestion into a new custom table can take up to 30 minutes.
+
+```kusto
+MySQLAudit_CL
+| project TimeGenerated, RawData, _ResourceId
+| where _ResourceId endswith "CORP-SDA1-HS12"
+```
+
+`RawData` holds the unparsed line. Structuring it is a Phase 4 problem; the only question here is whether records arrive at all.
+
+<!-- SCREENSHOT: MySQLAudit_CL results showing recognizable MySQL connection/query text in RawData -->
+
+**7. Scope every query to this resource**
+
+> ⚠️ `MySQLAudit_CL` is shared across the range and contains **every participant's** MySQL logs. Any unfiltered query returns other people's data.
+
+```kusto
+MySQLAudit_CL
+| where _ResourceId endswith "CORP-SDA1-HS12"
+```
+
+This becomes non-negotiable in Phase 5 — without the filter, someone else's attacker looks like our incident.
+
+<!-- SCREENSHOT: same query with and without the filter, showing the row count difference -->
+
+---
+
+- [x] Custom text log DCR created against the MySQL general log
+- [x] Destination set to `LAW-Cyber-Range`
+- [x] `AzureMonitorWindowsAgent` installed and healthy
+- [x] `MySQLAudit_CL` returning scoped rows
+
+> `RawData` is unparsed — field extraction happens in Phase 4 before any rule is written against it.
