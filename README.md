@@ -69,7 +69,7 @@ The core control of this phase and the one reversed in Phase 5.
 
 ```kusto
 DeviceInfo
-| where DeviceName startswith "CORP-"
+| where DeviceName startswith "corp-sda1-hs12"
 | top 10 by Timestamp desc
 ```
 
@@ -94,6 +94,7 @@ Defender tells us what happens *on* the box — processes, logons, connections. 
 A deallocated VM ships nothing and throws no error. Most common cause of an empty table 30 minutes later.
 
 <!-- SCREENSHOT: VM overview blade — hostname CORP-SDA1-HS12 with Status: Running -->
+<img width="641" height="342" alt="image" src="https://github.com/user-attachments/assets/85e9908b-6560-4ef7-9e8b-6e3dae13fe79" />
 
 **2. Confirm existing telemetry is current**
 
