@@ -83,6 +83,101 @@ DeviceInfo
 
 > Egress not yet restricted — lock down before Phase 5.
 
+## Phase 2 — Install & Populate MySQL
+
+**Goal:** Stand up MySQL on the hardened VM, load it with realistic data, and turn on the logging that Phase 3 will ship to the workspace.
+
+The database is the lure. It needs to look like something worth reaching — populated with plausible corporate data rather than an empty default install — and it needs to record every connection attempt and query, success or failure, before the box is ever exposed.
+
+**1. Install the Visual C++ 2019 Redistributable (x64)**
+
+A hard prerequisite for MySQL 8.0. Installing MySQL first just fails partway through.
+
+- [Microsoft Visual C++ 2019 Redistributable (x64)](https://aka.ms/vc14/vc_redist.x64.exe) — [supported versions reference](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170#latest-supported-redistributable-version)
+
+**2. Install MySQL 8.0.45**
+
+- [mysql-installer-community-8.0.45.0.msi](https://downloads.mysql.com/archives/get/p/25/file/mysql-installer-community-8.0.45.0.msi) — [installer archive](https://downloads.mysql.com/archives/installer/)
+
+Choose **Developer Default** or **Full** so Workbench installs alongside the server. Accept defaults everywhere else.
+
+Set a **strong root password** and store it in a password manager. This stays strong through Phase 4 — credential weakening is a deliberate Phase 5 change, not a shortcut taken now.
+
+<!-- SCREENSHOT: MySQL installer setup type screen with Developer Default selected -->
+
+**3. Connect via MySQL Workbench**
+
+Create a new connection and confirm it opens against the local instance.
+
+<!-- SCREENSHOT: Workbench connection established, server status green -->
+
+**4. Import the sample dataset**
+
+Download [`db_info_import.sql`](https://drive.google.com/file/d/1xwJBq_96ehR-obBPZYEgqrSwwmhGSAhW/view?usp=drive_link) to the VM, open it as an SQL script in Workbench, and execute.
+
+> ⚠️ Workbench will appear frozen — it isn't, the insert volume is just large. If the connection drops, re-authenticate and retry. If it fails repeatedly, reduce the user count in the script from 5000 to 1000 or fewer.
+
+**5. Confirm the schema loaded**
+
+Refresh the **Schemas** tab and verify `lnp_corp` is present with its tables populated.
+
+<!-- SCREENSHOT: Schemas tab showing lnp_corp expanded with tables and row data -->
+
+**6. Enable general query logging**
+
+This is what makes the database observable. Every connection — successful or not — and every query gets written to a file on disk.
+
+```sql
+SET GLOBAL general_log = 'ON';
+SET GLOBAL log_output = 'FILE';
+SHOW VARIABLES LIKE 'general_log%';
+```
+
+<!-- SCREENSHOT: SHOW VARIABLES output confirming general_log = ON and the file path -->
+
+**7. Replace `my.ini`**
+
+Download [`my.ini`](https://drive.google.com/file/d/1_rc2H24rRgJrN0aQ9m-NLUiR7agcsY2j/view?usp=drive_link) and overwrite:
+
+```
+C:\ProgramData\MySQL\MySQL Server 8.0\my.ini
+```
+
+Two changes matter here. It pins the log destination so the path is predictable for the DCR, and it permits network logins — without that, MySQL only listens on loopback and no remote attacker could ever reach it in Phase 5.
+
+Log path:
+
+```
+C:\ProgramData\MySQL\MySQL Server 8.0\Data\mysql_general.log
+```
+
+**8. Restart the `MySQL80` service**
+
+`services.msc` → restart. The `SET GLOBAL` statements above are runtime-only; the `my.ini` changes need the restart to take effect and to survive reboots.
+
+<!-- SCREENSHOT: services.msc showing MySQL80 running after restart -->
+
+**9. Verify the log is writing**
+
+Run a few `SELECT` queries in Workbench, then open `mysql_general.log` and confirm they appear.
+
+```sql
+SELECT * FROM lnp_corp.employees LIMIT 10;
+```
+
+<!-- SCREENSHOT: mysql_general.log open in a text editor showing the SELECT statements and connection entries -->
+
+---
+
+- [x] VC++ 2019 Redistributable installed
+- [x] MySQL 8.0.45 installed with Workbench, strong root password
+- [x] `lnp_corp` schema imported and populated
+- [x] `general_log = ON`, output set to `FILE`
+- [x] `my.ini` replaced, network login enabled
+- [x] `MySQL80` restarted, queries confirmed in `mysql_general.log`
+- [ ] *Optional:* [full server backup via Workbench export](https://dev.mysql.com/doc/workbench/en/wb-admin-export-import-management.html)
+
+> Log path for Phase 3: `C:\ProgramData\MySQL\MySQL Server 8.0\Data\mysql_general.log`
 ## Phase 3 — Wire Logging to Log Analytics
 
 **Goal:** Ship MySQL's own activity log into `LAW-Cyber-Range` so database activity is queryable alongside endpoint telemetry.
