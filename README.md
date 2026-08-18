@@ -50,15 +50,18 @@ the fact. Telemetry lands in `LAW-Cyber-Range` for analysis.
 
 **1. Deploy Windows 11 VM with public IP**
 Named `CORP-SDA1-HS12` to look like a real asset, not a lab.
+
 <img width="976" height="587" alt="image" src="https://github.com/user-attachments/assets/95813954-7b00-4f3b-be60-eb04679e5e9a" />
 
 
 **2. Deny all inbound traffic from the internet**
 The core control of this phase — and the one reversed in Phase 5.
+
 <img width="936" height="451" alt="image" src="https://github.com/user-attachments/assets/90a06231-f7af-4076-8832-41677dae977f" />
 
 
 **3. Onboard to Microsoft Defender for Endpoint**
+
 <img width="989" height="592" alt="image" src="https://github.com/user-attachments/assets/10599074-bbf7-4c36-b073-063214bee861" />
 
 
