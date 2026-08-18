@@ -46,7 +46,7 @@ the fact. Telemetry lands in `LAW-Cyber-Range` for analysis.
 
 ## Phase 1 — Harden
 
-**Goal:** Deploy the VM, seal it from the internet, confirm telemetry — before any control is loosened.
+**Goal:** Deploy the VM, seal it from the internet, confirm telemetry before any control is loosened.
 
 **1. Deploy Windows 11 VM with public IP**
 Named `CORP-SDA1-HS12` to look like a real asset, not a lab.
@@ -55,7 +55,7 @@ Named `CORP-SDA1-HS12` to look like a real asset, not a lab.
 
 
 **2. Deny all inbound traffic from the internet**
-The core control of this phase — and the one reversed in Phase 5.
+The core control of this phase and the one reversed in Phase 5.
 
 <img width="936" height="451" alt="image" src="https://github.com/user-attachments/assets/90a06231-f7af-4076-8832-41677dae977f" />
 
@@ -83,6 +83,42 @@ DeviceInfo
 
 > Egress not yet restricted — lock down before Phase 5.
 
-**Next:** Phase 2 — Instrument · telemetry into `LAW-Cyber-Range`
+## Phase 3 — Wire Logging to Log Analytics
 
+**Goal:** Ship MySQL's own activity log into `LAW-Cyber-Range` so database activity is queryable alongside endpoint telemetry.
+
+Defender tells us what happens *on* the box — processes, logons, connections. It says nothing about what happens *inside* MySQL. Since the database is the lure, that gap is the whole exposure. The Azure Monitor Agent (AMA) reads the log file off disk; a Data Collection Rule (DCR) tells it which file to watch and where to send it.
+
+**1. Confirm the VM is running**
+
+A deallocated VM ships nothing and throws no error. Most common cause of an empty table 30 minutes later.
+
+<!-- SCREENSHOT: VM overview blade — hostname CORP-SDA1-HS12 with Status: Running -->
+
+**2. Confirm existing telemetry is current**
+
+Prove the Phase 1 pipeline is healthy before adding a source, so a later failure is attributable to the DCR and not to onboarding.
+
+```kusto
+DeviceInfo
+| where DeviceName startswith "CORP-"
+| top 10 by Timestamp desc
+```
+
+<!-- SCREENSHOT: DeviceInfo query results with a recent Timestamp visible -->
+
+**3. Create the custom text log DCR**
+
+**Monitor → Data Collection Rules → Create → Custom Text Logs**
+
+| Setting | Value |
+|---------|-------|
+| File pattern | `C:\ProgramData\MySQL\MySQL Server 8.0\Data\mysql_general.log` |
+| Table name | `MySQLAudit_CL` |
+| Record delimiter | `TimeStamp` |
+| Timestamp format | `ISO 8601` |
+
+The record delimiter matters more than it looks — MySQL writes multi-line entries, and splitting on the timestamp keeps one query event as one row instead of shredding it across several. A typo in the file pattern deploys cleanly and silently watches nothing.
+
+<!-- SCREENSHOT: DCR data source config showing file pattern, table name,
 
