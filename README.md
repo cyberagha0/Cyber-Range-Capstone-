@@ -83,6 +83,9 @@ DeviceInfo
 
 > Egress not yet restricted — lock down before Phase 5.
 
+
+
+
 ## Phase 2 — Install & Populate MySQL
 
 **Goal:** Stand up MySQL on the hardened VM, load it with realistic data, and turn on the logging that Phase 3 will ship to the workspace.
@@ -110,6 +113,7 @@ Set a **strong root password** and store it in a password manager. This stays st
 Create a new connection and confirm it opens against the local instance.
 
 <!-- SCREENSHOT: Workbench connection established, server status green -->
+<img width="341" height="200" alt="image" src="https://github.com/user-attachments/assets/849ab1fe-6b33-4064-bdab-492db735272e" />
 
 **4. Import the sample dataset**
 
@@ -117,13 +121,7 @@ Download [`db_info_import.sql`](https://drive.google.com/file/d/1xwJBq_96ehR-obB
 
 > ⚠️ Workbench will appear frozen — it isn't, the insert volume is just large. If the connection drops, re-authenticate and retry. If it fails repeatedly, reduce the user count in the script from 5000 to 1000 or fewer.
 
-**5. Confirm the schema loaded**
-
-Refresh the **Schemas** tab and verify `lnp_corp` is present with its tables populated.
-
-<!-- SCREENSHOT: Schemas tab showing lnp_corp expanded with tables and row data -->
-
-**6. Enable general query logging**
+**5. Enable general query logging**
 
 This is what makes the database observable. Every connection — successful or not — and every query gets written to a file on disk.
 
@@ -135,7 +133,7 @@ SHOW VARIABLES LIKE 'general_log%';
 
 <!-- SCREENSHOT: SHOW VARIABLES output confirming general_log = ON and the file path -->
 
-**7. Replace `my.ini`**
+**6. Replace `my.ini`**
 
 Download [`my.ini`](https://drive.google.com/file/d/1_rc2H24rRgJrN0aQ9m-NLUiR7agcsY2j/view?usp=drive_link) and overwrite:
 
@@ -151,7 +149,7 @@ Log path:
 C:\ProgramData\MySQL\MySQL Server 8.0\Data\mysql_general.log
 ```
 
-**8. Restart the `MySQL80` service**
+**7. Restart the `MySQL80` service**
 
 `services.msc` → restart. The `SET GLOBAL` statements above are runtime-only; the `my.ini` changes need the restart to take effect and to survive reboots.
 
@@ -166,6 +164,7 @@ SELECT * FROM lnp_corp.employees LIMIT 10;
 ```
 
 <!-- SCREENSHOT: mysql_general.log open in a text editor showing the SELECT statements and connection entries -->
+<img width="787" height="611" alt="image" src="https://github.com/user-attachments/assets/76a8cf0e-dde2-43ee-aa49-9b10ba6064d1" />
 
 ---
 
