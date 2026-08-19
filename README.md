@@ -177,6 +177,9 @@ SELECT * FROM lnp_corp.employees LIMIT 10;
 - [ ] *Optional:* [full server backup via Workbench export](https://dev.mysql.com/doc/workbench/en/wb-admin-export-import-management.html)
 
 > Log path for Phase 3: `C:\ProgramData\MySQL\MySQL Server 8.0\Data\mysql_general.log`
+
+
+
 ## Phase 3 — Wire Logging to Log Analytics
 
 **Goal:** Ship MySQL's own activity log into `LAW-Cyber-Range` so database activity is queryable alongside endpoint telemetry.
@@ -220,15 +223,13 @@ The record delimiter matters more than it looks — MySQL writes multi-line entr
 
 Same workspace as the Defender telemetry, so Phase 4 detections can correlate database activity against process and logon events in a single query.
 
-<!-- SCREENSHOT: DCR Destination tab with LAW-Cyber-Range selected -->
-
 **5. Verify the Azure Monitor Agent installed**
 
 Creating the DCR triggers the extension install automatically. A failed install is a silent dead end, so confirm rather than assume.
 
 **VM → Settings → Extensions + applications → `AzureMonitorWindowsAgent`**
 
-<!-- SCREENSHOT: Extensions blade showing AzureMonitorWindowsAgent, status Succeeded -->
+<img width="910" height="643" alt="image" src="https://github.com/user-attachments/assets/861e56db-fad9-412d-82c6-a6a32524ce81" />
 
 **6. Generate activity and verify ingestion**
 
@@ -243,6 +244,8 @@ MySQLAudit_CL
 `RawData` holds the unparsed line. Structuring it is a Phase 4 problem; the only question here is whether records arrive at all.
 
 <!-- SCREENSHOT: MySQLAudit_CL results showing recognizable MySQL connection/query text in RawData -->
+<img width="922" height="755" alt="image" src="https://github.com/user-attachments/assets/a84ec83d-01d6-4693-ab33-307bc87555da" />
+
 
 **7. Scope every query to this resource**
 
@@ -256,6 +259,7 @@ MySQLAudit_CL
 This becomes non-negotiable in Phase 5 — without the filter, someone else's attacker looks like our incident.
 
 <!-- SCREENSHOT: same query with and without the filter, showing the row count difference -->
+<img width="915" height="640" alt="image" src="https://github.com/user-attachments/assets/9d937ec3-c8de-4efe-a5bf-40061787c1a1" />
 
 ---
 
