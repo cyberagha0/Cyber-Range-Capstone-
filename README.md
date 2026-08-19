@@ -269,3 +269,89 @@ This becomes non-negotiable in Phase 5 — without the filter, someone else's at
 - [x] `MySQLAudit_CL` returning scoped rows
 
 > `RawData` is unparsed — field extraction happens in Phase 4 before any rule is written against it.
+
+
+
+# Phase 4 — Write Detections (While the Box Is Still Clean)
+
+Detections are authored **before** the VM is exposed, then verified silent against the clean baseline. If a rule fires now, it's a false positive I can fix while nothing is at stake — so the first real alert is a real intrusion.
+
+Shared settings for both rules: **Severity** Medium · **MITRE** Initial Access / T1078 Valid Accounts · **Run every** 5 min, **lookup** last 5 hours · **Alert when** results > 0 · **Trigger alert for each event** · Incident creation on, alerts grouped when all entities match.
+
+---
+
+## Rule 1 — Successful Logon to the VM
+
+**Name:** `CyberDefense-CORP-SDA1-HS12-tural`
+
+```kusto
+// Virtual Machine Logons
+let MyDevice = "CORP-SDA1-HS12"; // MDE truncates the device name
+DeviceLogonEvents
+| where DeviceName == MyDevice
+| where AccountName in~ ("administrator", "guest")
+| where ActionType == "LogonSuccess"
+| project TimeGenerated, RemoteIP, AccountName, DeviceName, ActionType, LogonType
+```
+
+Scoped to `administrator` and `guest` — the accounts a stranger would try, and the ones weakened in Phase 5.
+
+**Entity mapping:** Account → `AccountName` · Host → `DeviceName` · IP → `RemoteIP`
+
+> 📸 **Screenshot:** Rule logic page — query with entity mapping expanded.
+
+---
+
+## Rule 2 — Successful Login to MySQL
+
+**Name:** `CyberDefense-CORP-SDA1-HS12-tural-successful`
+
+`MySQLAudit_CL` lands as one blob per row in `RawData`, so it gets parsed into columns first. The catch: MySQL writes a `Connect` line for successes *and* failures — a failure just adds an `Access denied` line with the same `ConnectionId`. So the query collects every failed ID, then discards matching `Connect` lines. What's left is a genuine success.
+
+```kusto
+// MySQL successful logins
+let MyDevice = "CORP-SDA1-HS12";
+let FailedConnections =
+MySQLAudit_CL
+| extend RawData = replace_string(RawData, "\t", " ")
+| extend DeviceName = tostring(split(_ResourceId, "/")[-1])
+| where DeviceName =~ MyDevice
+| where RawData has "Access denied"
+| extend ConnectionId = extract(@"^\S+\s+(\d+)\s+Connect", 1, RawData)
+| distinct ConnectionId;
+MySQLAudit_CL
+| extend RawData = replace_string(RawData, "\t", " ")
+| extend DeviceName = tostring(split(_ResourceId, "/")[-1])
+| where DeviceName =~ MyDevice
+| where RawData has "Connect"
+| extend ConnectionId = extract(@"^\S+\s+(\d+)\s+Connect", 1, RawData)
+| extend ActionType =
+    case(
+        RawData has "Access denied", "LogonFailure",
+        ConnectionId in (FailedConnections), "Ignore",
+        "LogonSuccess"
+    )
+| where ActionType != "Ignore"
+| extend Username = replace_string(tostring(split(tostring(split(RawData,"@")[0]), " ")[-1]), "'", "")
+| extend IpAddress = replace_string(tostring(split(split(RawData,"@")[1], " ")[0]), "'", "")
+| where ActionType == "LogonSuccess"
+| project TimeGenerated, DeviceName, Username, IpAddress, ActionType, RawData
+| order by TimeGenerated desc
+```
+
+**Entity mapping:** Account → `Username` · Host → `DeviceName` · IP → `IpAddress`
+
+> 📸 **Screenshot:** Raw `MySQLAudit_CL` vs. parsed output — the blob becoming real columns.
+
+---
+
+## Baseline Validation
+
+Both queries were run manually across the full baseline window before enabling the rules. Both returned **zero results** — expected, since inbound traffic is still denied and no one has logged in from a public address.
+
+> 📸 **Screenshot:** Analytics rules list showing both rules **Enabled**, and a query returning no results.
+
+<img width="1498" height="488" alt="image" src="https://github.com/user-attachments/assets/f7407eb9-8647-420e-a289-69d3fe4b7bd0" />
+
+
+**Phase 4 complete.** Detections are live and quiet. The next alert will come from someone who isn't me.
