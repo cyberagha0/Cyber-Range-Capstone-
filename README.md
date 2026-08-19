@@ -299,6 +299,7 @@ Scoped to `administrator` and `guest` — the accounts a stranger would try, and
 **Entity mapping:** Account → `AccountName` · Host → `DeviceName` · IP → `RemoteIP`
 
 > 📸 **Screenshot:** Rule logic page — query with entity mapping expanded.
+<img width="997" height="821" alt="image" src="https://github.com/user-attachments/assets/d0bb99aa-d06c-4563-8bb0-044a9519e7cd" />
 
 ---
 
