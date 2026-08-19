@@ -342,6 +342,8 @@ MySQLAudit_CL
 **Entity mapping:** Account → `Username` · Host → `DeviceName` · IP → `IpAddress`
 
 > 📸 **Screenshot:** Raw `MySQLAudit_CL` vs. parsed output — the blob becoming real columns.
+> <img width="879" height="737" alt="image" src="https://github.com/user-attachments/assets/6e78eca9-ef81-40cd-9388-a8ea3c3c48a2" />
+
 
 ---
 
