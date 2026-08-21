@@ -41,10 +41,11 @@ the fact. Telemetry lands in `LAW-Cyber-Range` for analysis.
 | 4 | **Detect** | Author ATT&CK-mapped analytics rules | Detection rule set + KQL |
 | 5 | **Weaken & Expose** | Reduce controls, open to the internet, wait | Live incident + investigation |
 
+
 ### Honeypot Architecture 
 <img width="1083" height="709" alt="image" src="https://github.com/user-attachments/assets/708f6f78-82a7-440d-9734-30b49429a414" />
 
-## Phase 1 — Harden
+# Phase 1 — Harden
 
 **Goal:** Deploy the VM, seal it from the internet, confirm telemetry before any control is loosened.
 
@@ -86,7 +87,7 @@ DeviceInfo
 
 
 
-## Phase 2 — Install & Populate MySQL
+# Phase 2 — Install & Populate MySQL
 
 **Goal:** Stand up MySQL on the hardened VM, load it with realistic data, and turn on the logging that Phase 3 will ship to the workspace.
 
@@ -180,7 +181,7 @@ SELECT * FROM lnp_corp.employees LIMIT 10;
 
 
 
-## Phase 3 — Wire Logging to Log Analytics
+# Phase 3 — Wire Logging to Log Analytics
 
 **Goal:** Ship MySQL's own activity log into `LAW-Cyber-Range` so database activity is queryable alongside endpoint telemetry.
 
@@ -358,3 +359,34 @@ Both queries were run manually across the full baseline window before enabling t
 
 
 **Phase 4 complete.** Detections are live and quiet. The next alert will come from someone who isn't me.
+
+
+
+# Phase 5 — Weaken & Expose
+
+**Host:** `CORP-SDA1-HS12`
+
+## Steps
+
+1. **Administrator** (`compmgmt.msc`) — enable, confirm in Administrators group, set a weak password (top-10 `rockyou.txt`).
+2. **Guest** (`compmgmt.msc`) — enable, blank password, add to Users group.
+3. **Guest network logon** (`secpol.msc` → User Rights Assignment) — remove Guest from *Deny log on through RDS* and *Deny log on locally*; add Guest/Remote Desktop Users to *Allow log on through RDS*. In Security Options, set *Limit blank passwords to console logon only* → **Disabled**.
+4. **RDP** — add Guest under Remote Desktop Users, then `gpupdate /force`.
+5. **MySQL** — expose over the network with a weak root login:
+```sql
+   CREATE USER 'root'@'%' IDENTIFIED BY 'root';
+   GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;
+   FLUSH PRIVILEGES;
+```
+6. **Defender** — capture an Investigation Package *before* opening the firewall (clean-state baseline).
+7. **Open the network** — disable Windows Firewall; weaken NSG to allow all inbound.
+
+## Exposure timestamp
+
+T0: ___2026-07-30T04:31:21.9289822Z___
+
+
+## Vector
+RDP brute-force → pivot to local MySQL → dummy data. Chain: **Initial Access → Discovery → Collection**. Optionally expose `3306` directly as insurance.
+
+
