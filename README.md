@@ -390,3 +390,76 @@ T0: ___2026-07-30T04:31:21.9289822Z___
 RDP brute-force → pivot to local MySQL → dummy data. Chain: **Initial Access → Discovery → Collection**. Optionally expose `3306` directly as insurance.
 
 
+# Phase 6 — Detect the Breach
+
+**Host:** `CORP-SDA1-HS12` · Sentinel + Defender for Endpoint + KQL
+**Exposure start:** `2026-07-30T04:31:21.9289822Z`
+
+Kept the exposed VM online, monitored logons, confirmed my Analytics Rule fired on a real intrusion, then traced what the attacker did.
+
+---
+
+## 1. Monitor logons
+
+```kql
+let MyDevice = "corp-sda1-hs12";
+let ServerVulnerableDateTime = todatetime("2026-07-30T04:31:21.9289822Z");
+DeviceLogonEvents
+| where TimeGenerated > ServerVulnerableDateTime
+| where DeviceName startswith MyDevice
+| where AccountName in~ ("administrator", "guest")
+| project TimeGenerated, RemoteIP, AccountName, ActionType, LogonType
+| order by TimeGenerated desc
+```
+
+Brute force = wall of `LogonFailed`. Breach = one `LogonSuccess`, `RemoteInteractive`.
+
+![Failed and successful logons](./screenshots/phase6-01-logons.png)
+
+---
+
+## 2. Incident created by my rule
+
+Sentinel → Incidents. Fired with no manual action. Set Active, verified entities (account, host, IP) mapped correctly.
+
+![Incident and entity mapping](./screenshots/phase6-02-incident.png)
+
+---
+
+## 3. Scope the attacker's activity
+
+```kql
+let MyDevice = "corp-sda1-hs12";
+let BreachTime = todatetime("2026-07-30T04:31:21.9289822Z");  // narrow to the successful logon
+DeviceProcessEvents      // repeat for DeviceFileEvents, DeviceNetworkEvents
+| where TimeGenerated > BreachTime
+| where DeviceName startswith MyDevice
+| where AccountName in~ ("administrator", "guest")
+| project TimeGenerated, FileName, ProcessCommandLine
+| order by TimeGenerated asc
+```
+
+Discovery commands, dropped tooling, outbound connection attempts — the last of which my NSG rules blocked.
+
+![Attacker activity across tables](./screenshots/phase6-03-attacker-activity.png)
+
+---
+
+## Attack chain
+
+| Observation | Technique |
+|-------------|-----------|
+| Failed RDP logons from external IP | T1110.001 — Password Guessing |
+| Successful `administrator` logon | T1078.003 — Valid Accounts: Local |
+| Discovery commands | T1033 / T1087.001 |
+| Tooling dropped to disk | T1105 — Ingress Tool Transfer |
+
+---
+
+## Outcome
+
+Real intrusion, detected by my own rule, fully reconstructed from telemetry.
+
+**Detection gaps:** *fill in* — what the rules missed and what I'd write next.
+
+
