@@ -414,8 +414,8 @@ DeviceLogonEvents
 
 Brute force = wall of `LogonFailed`. Breach = one `LogonSuccess`, `RemoteInteractive`.
 
-![Failed and successful logons](<img width="824" height="827" alt="image" src="https://github.com/user-attachments/assets/8e5edd69-5187-4810-93b8-48824fa43758" />
-)
+![Failed and successful logons]
+<img width="824" height="827" alt="image" src="https://github.com/user-attachments/assets/833326d3-c2d9-4cc0-be00-c9c69d711059" />
 
 ---
 
