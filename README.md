@@ -421,9 +421,11 @@ Brute force = wall of `LogonFailed`. Breach = one `LogonSuccess`, `RemoteInterac
 
 ## 2. Incident created by my rule
 
-Sentinel → Incidents. Fired with no manual action. Set Active, verified entities (account, host, IP) mapped correctly.
+Sentinel → Incidents. Fired. Set Active, verified entities (account, host, IP) mapped correctly.
 
-![Incident and entity mapping](./screenshots/phase6-02-incident.png)
+![Incident and entity mapping]
+
+<img width="1078" height="910" alt="image" src="https://github.com/user-attachments/assets/a525191e-7b40-4cd6-973b-837009867151" />
 
 ---
 
