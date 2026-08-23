@@ -444,9 +444,9 @@ DeviceProcessEvents      // repeat for DeviceFileEvents, DeviceNetworkEvents
 
 Discovery commands, dropped tooling, outbound connection attempts — the last of which my NSG rules blocked.
 
-![Attacker activity across tables](./screenshots/phase6-03-attacker-activity.png)
+![Attacker activity across tables]
+<img width="970" height="761" alt="image" src="https://github.com/user-attachments/assets/796f34bb-44bc-404d-a4ce-d73d82d5a63b" />
 
----
 
 ## Attack chain
 
