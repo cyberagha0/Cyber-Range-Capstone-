@@ -582,7 +582,7 @@ A successful Guest or Administrator logon means the story continues in MDE:
 | `DeviceNetworkEvents` | Where the box started calling out to |
 | `NTANetAnalytics` | Flow-level traffic, including what the NSG blocked |
 
-###Full investigation report — unauthorized RDP access, 2026-07-30 (click to expand)
+###Full investigation report on single Successful Logon event to showcase how it would be done in real SOC environment threat hunting (click to expand)
 <details>
 <summary><b>📄 Full investigation report — unauthorized RDP access, 2026-07-30 (click to expand)</b></summary>
 
@@ -838,63 +838,60 @@ Zero records. The query ran without a time constraint across the available reten
 | Command and Control | Not observed | No outbound connection to the source address |
 | Exfiltration | Not determinable | No staging evidence; read activity is not logged |
 
-### Limitations
+## Phase 8 — Contain the Breach (Isolation)
 
-None of these tables record file reads, so whether the intruder viewed the MySQL data, opened configuration files, or enumerated stored credentials is unknown. Browser destinations during the session were not resolved, leaving open the possibility that the host was used as a browsing proxy. With flow logging absent, session transfer volume does not exist as evidence.
+With the VM confirmed powered on, we isolated the device through the Defender portal to cut off any remaining attacker access while keeping the host available for forensic collection. Immediately after isolation took effect, we pulled a second Investigation Package from the same device — this gives us an "after" snapshot to diff against the package captured earlier in the investigation, so we can see exactly what the attacker left on the system.
+<img width="622" height="319" alt="image" src="https://github.com/user-attachments/assets/3b1435e3-c730-4c49-9dfe-33c0ccc49666" />
 
-The absence of persistence establishes that the intruder did not intend to return. It does not establish that nothing was taken.
 
-### Next steps
+**Exact time of isolation:** `2026-08-24T14:32:18.4471209Z`
 
-1. Resolve Microsoft Edge network destinations for the 04:31 to 04:57 UTC window.
-2. Enable NSG flow logs with Traffic Analytics against `LAW-Cyber-Range`.
-3. Author a detection rule for RemoteInteractive logons from public addresses and validate it against this incident.
+### Isolation Evidence
 
-</details>
+**Isolation confirmation — Defender portal**
 
-[step4.md](https://github.com/user-attachments/files/31383242/step4.md)
+<img width="1242" height="551" alt="image" src="https://github.com/user-attachments/assets/89937535-7e5d-4e10-907a-fab4bd2375f9" />
 
----
 
-## Step 5 — Let it run, then shut it down
+**Post-isolation Investigation Package collection**
 
-The lab asks for 24 hours minimum. I left everything reachable for **[FILL IN]** hours, until the activity started repeating and nothing new was showing up.
+<img width="616" height="713" alt="image" src="https://github.com/user-attachments/assets/b8adc96a-e7e2-44e4-89b3-0d81591fdd8a" />
 
-Before deallocating I exported the tables to CSV — the VM goes away, the logs shouldn't. Then I stopped the VM and put the deny-all inbound rule back on the NSG.
 
-> 📸 `![Shutdown](./screenshots/phase7-06-shutdown.png)`
+### Evidence
 
----
+**Screenshot 1 — Isolation confirmation in the Defender portal**
 
-## Step 6 — Run the logs through AI
+`[ insert screenshot here ]`
 
-Three separate passes: MySQL authentication, MySQL queries, and Defender host logs. Same prompt each time, log type swapped in:
+**Screenshot 2 — Device timeline entry showing the isolation action and its timestamp**
 
-```text
-You are a god-tier cybersecurity analyst with world-class threat hunting skills.
-Please look at these logs, these are <MySQL Server Authentication / MySQL Server
-Query / Microsoft Defender (MDE)> logs from my environment.
-Please analyze them and paint a picture for what might be going on.
-```
+`[ insert screenshot here ]`
 
-I treated the output as a starting point, not an answer. Anything it claimed, I went back and checked against the raw logs. Some of it held up, some of it was a reasonable guess with nothing behind it, and a couple of things were flat wrong. All three got noted — knowing where the model overreaches is part of the point.
+**Screenshot 3 — Investigation Package collection (post-isolation)**
 
-> 📸 `![AI analysis](./screenshots/phase7-07-ai-analysis.png)`
+`[ insert screenshot here ]`
 
----
 
-## What I found
+## Phase 9 — Eradication & Recovery
 
-*[Fill in from the notes.]*
+How this phase plays out comes down to two things: what actually happened, and what lived on the box that got hit. In this case the attacker owned both the VM and the MySQL instance, which means nothing on that host can really be trusted anymore. The straightforward answer is to **tear the VM down and stand the database back up from backup**.
 
-| | |
-|---|---|
-| Exposure window | *[FILL IN]* |
-| Distinct source IPs | *[FILL IN]* |
-| Failed logins | *[FILL IN]* |
-| Successful logins | *[FILL IN]* |
-| Time to first contact | *[FILL IN]* |
+If wiping the VM isn't on the table, the fallback is to lock the host down, lock the database down, and only then bring the data back.
 
-Short version of the attack: *[who reached the box, how they got in, what they did once they were there, and how far they got before I pulled the plug].*
+### Host cleanup
 
----
+- Tighten the NSG rules before anything else touches the network
+- Boot the VM and pull it out of isolation
+- Kick off a full Defender scan and let it finish
+- Switch the Windows Firewall back on (`wf.msc`)
+- Get rid of the built-in `administrator` account entirely
+- Make sure `guest` is still disabled
+- Give the local account a real username and a strong password
+
+### Database cleanup
+
+- Cut off MySQL access from the open internet
+- Either set a strong password on the network-facing `root` account or drop it
+- Bring the data back — see [Phase 2 — Install & populate MySQL](https://docs.google.com/document/d/1KSbUWZmTBgxRuytw95Rx3OCNAw_43ysw_yz7AWMaO90/edit?tab=t.0#bookmark=id.glhfao7c8e5m)
+  - Have an actual backup? [Restore it the real way](https://dev.mysql.com/doc/workbench/en/wb-admin-export-import-management.html)
