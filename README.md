@@ -582,8 +582,277 @@ A successful Guest or Administrator logon means the story continues in MDE:
 | `DeviceNetworkEvents` | Where the box started calling out to |
 | `NTANetAnalytics` | Flow-level traffic, including what the NSG blocked |
 
+Full investigation report — unauthorized RDP access, 2026-07-30 (click to expand)
+<details>
+<summary><b>📄 Full investigation report — unauthorized RDP access, 2026-07-30 (click to expand)</b></summary>
 
+<br>
 
+### Incident Summary
+
+| | |
+|---|---|
+| **Affected host** | `corp-sda1-hs12` (10.3.0.19) |
+| **Source address** | 137.74.119.18 (OVH SAS, AS16276, Roubaix, France) |
+| **Connection accepted** | 2026-07-30 03:29:28 UTC |
+| **Successful logon** | 2026-07-30 04:31:21 UTC |
+| **Session length** | Approximately 26 minutes |
+| **Classification** | Confirmed unauthorized interactive access with administrative privileges |
+
+A Windows 11 virtual machine was deliberately weakened and exposed to the public internet with Remote Desktop enabled, so that a genuine intrusion rather than simulated traffic would supply the incident data. On 2026-07-30 an external host successfully authenticated to the local administrator account and held an interactive session for roughly 26 minutes.
+
+Investigation across five telemetry tables established that the intruder obtained full administrative control but wrote no files to disk, installed no persistence mechanism, and never established a channel back to their own infrastructure. The only substantive action observed was launching a web browser. A secondary finding emerged during the investigation: flow level network logging was never enabled, leaving a measurable gap in the available evidence.
+
+### Timeline
+
+| Time (UTC) | Event | Source table |
+|---|---|---|
+| 03:29:28 | Inbound TCP connection accepted on port 3389 from 137.74.119.18:20024 | `DeviceNetworkEvents` |
+| 04:31:21 | Successful RemoteInteractive logon as `administrator` | `DeviceLogonEvents` |
+| 04:31:25 | Windows begins constructing the user profile | `DeviceFileEvents` |
+| 04:31:59 | Final registry write of the session | `DeviceRegistryEvents` |
+| 04:32:06 | Microsoft Edge launched | `DeviceFileEvents` |
+| 04:57:20 | Last observed activity, session ends | `DeviceFileEvents` |
+
+Roughly 62 minutes separate the accepted connection from successful authentication, consistent with credential guessing rather than use of a known password.
+
+> **Note on timestamps.** Advanced Hunting exports in local time (EDT, UTC−4) while the portal displays UTC. All times here have been normalized to UTC. Correlating raw exports without conversion makes related events appear four hours apart.
+
+---
+
+### Step 1 — Establishing the anchor · `DeviceLogonEvents`
+
+**Question:** Did any external host successfully authenticate to this machine?
+
+```kusto
+let MyDevice = "corp-sda1-hs12";
+DeviceLogonEvents
+| where DeviceName startswith MyDevice
+| where ActionType == "LogonSuccess"
+| where isnotempty(RemoteIP) and RemoteIPType == "Public"
+| project Timestamp, AccountName, AccountDomain, LogonType, RemoteIP,
+          ActionType, InitiatingProcessFileName
+| order by Timestamp asc
+```
+
+<img src="images/01-ip-entity.png" width="420">
+
+Several successful logons from public addresses were returned. One was selected based on `LogonType`. **RemoteInteractive** corresponds to Windows Logon Type 10, indicating an interactive Remote Desktop session rather than a service or network authentication. That distinction is what makes the event worth pursuing: somebody had a live desktop in front of them.
+
+The source belongs to OVH SAS on AS16276. Defender assigns it an entity reputation of **Suspicious (4/100)** and reports it observed on organization devices exactly **once** in the preceding 30 days.
+
+Two qualifications. OVH is a legitimate large scale hosting provider, and low cost virtual servers there are routine infrastructure for opportunistic scanning, so the ASN alone is not incriminating. A reputation score of 4 out of 100 is likewise low confidence and does not support attribution. The weight of this investigation rests on host behavior.
+
+**Anchor established:** `2026-07-30T04:31:21.9289822Z`
+
+---
+
+### Step 2 — Did they drop or take anything? · `DeviceFileEvents`
+
+**Question:** Was any attacker supplied file written to the host?
+
+```kusto
+let MyDevice = "corp-sda1-hs12";
+let Anchor = datetime(2026-07-30T04:31:21.9289822Z);
+DeviceFileEvents
+| where DeviceName startswith MyDevice
+| where Timestamp between (Anchor - 15m .. Anchor + 6h)
+| project Timestamp, ActionType, FileName, FolderPath, SHA256, FileSize,
+          InitiatingProcessFileName, InitiatingProcessCommandLine,
+          InitiatingProcessAccountName, InitiatingProcessParentFileName
+| order by Timestamp asc
+```
+
+<img src="images/02-file-events.png" width="900">
+
+The export returned 163 events. Only **63 ran under the `administrator` account**, spanning 04:31:25 to 04:57:20 UTC. The remaining 100 belonged to `system` and `local service` and were attributed to platform tooling:
+
+| Observed activity | Attribution |
+|---|---|
+| `__PSScriptPolicyTest_*.ps1` in `C:\Windows\SystemTemp` | PowerShell's own AllSigned execution policy probe |
+| `powershell.exe` with parent `SenseIR.exe` or `MsSense.exe` | Defender for Endpoint live response engine |
+| `csc.exe` writing a randomly named DLL | PowerShell compiling a type in memory |
+| `sdbinst.exe` writing to `C:\Windows\apppatch\MergeSdbFiles` | Scheduled shim database maintenance, two hour cadence |
+| `collectguestlogs.exe` producing `VMAgentLogs.zip` | Azure VM guest agent on its own timer |
+| `schtasks.exe` writing `ScheduledTasks.csv` | Defender inventorying scheduled tasks |
+
+Two entries warrant explicit mention rather than silent exclusion. `sdbinst.exe` writing an `.sdb` file matches **T1546.011 Application Shimming**, and `schtasks.exe` writing a file matches **T1053.005 Scheduled Task**. Both are benign here, and the only evidence establishing that is the parent process and account. Verifying parentage before flagging separates a finding from a false positive.
+
+**Within the intruder's session:** the earliest events show `explorer.exe` with parent `userinit.exe` creating `Links\Desktop.lnk`, `Links\Downloads.lnk`, and Quick Launch shortcuts. This is Windows constructing a user profile, establishing that this was the **first interactive logon the account had ever performed on the host**. The intruder was not returning to an existing foothold.
+
+All subsequent activity, 57 events between 04:32:06 and 04:57:20, originated from `msedge.exe` writing into `CRX_INSTALL` and `msedge_chrome_Unpacker_BeginUnzipping` directories under `%LOCALAPPDATA%\Temp`. These are Microsoft Edge components unpacking on first launch, originating from Microsoft rather than the intruder.
+
+**Finding.** Nothing was dropped. No executables, scripts, or archives in any user writable location. No activity in Downloads, Desktop, `C:\Users\Public`, or `\PerfLogs`. The single substantive action was launching a browser.
+
+> **Scope limitation.** `DeviceFileEvents` records creations, modifications, renames, and deletions. It does not record file reads, so it cannot establish whether data was accessed. The absence of staged archives and `\\tsclient\` redirected drive paths are weak negative indicators rather than proof.
+
+---
+
+### Step 3 — Did they establish persistence? · `DeviceRegistryEvents`
+
+**Question:** Was any mechanism created that would restore access after the session ended?
+
+```kusto
+let MyDevice = "corp-sda1-hs12";
+let SessionStart = datetime(2026-07-30T04:31:21Z);
+let SessionEnd   = datetime(2026-07-30T04:57:20Z);
+let Baseline =
+    DeviceRegistryEvents
+    | where DeviceName startswith MyDevice
+    | where Timestamp between (SessionStart - 7d .. SessionStart - 1h)
+    | distinct RegistryKey;
+DeviceRegistryEvents
+| where DeviceName startswith MyDevice
+| where Timestamp between (SessionStart .. SessionEnd + 10m)
+| where ActionType in ("RegistryValueSet", "RegistryKeyCreated")
+| where RegistryKey !in (Baseline)
+| project Timestamp, ActionType, RegistryKey, RegistryValueName, RegistryValueData,
+          InitiatingProcessFileName, InitiatingProcessParentFileName,
+          InitiatingProcessAccountName
+| order by Timestamp asc
+```
+
+<img src="images/03-registry-events.png" width="900">
+
+292 events survived the baseline diff:
+
+| Account | Events | Source |
+|---|---|---|
+| `system` | 245 | Profile initialization and platform services |
+| `network service` | 30 | `wmiprvse.exe` writing boot configuration objects |
+| `administrator` | 15 | The intruder's session |
+| `local service` | 2 | Service telemetry |
+
+229 of the system events are `services.exe` with parent `wininit.exe`, all at one timestamp, creating per user service instances under `ControlSet001\Services\*_cd89cc`. Windows instantiates a private copy of every user scoped service the first time an account logs on interactively.
+
+That reveals a genuine limitation. **A baseline diff loses most of its filtering power against a first logon**, because a newly created profile makes every user scoped key appear new by definition. The technique remained useful but excluded far less than it normally would.
+
+**The 15 administrator events all occur within 34 seconds of logon**, between 04:31:26 and 04:31:59. All but one are `explorer.exe` with parent `userinit.exe`, or `ie4uinit.exe`, writing wallpaper values, `TranscodedImageCount`, Internet Settings defaults, and the `Shell Folders\Startup` path. Standard profile construction.
+
+**One entry required closer examination:**
+
+```
+04:31:59 UTC   RegistryValueSet
+HKEY_CURRENT_USER\...\CurrentVersion\Run
+  MicrosoftEdgeAutoLaunch_19C07ACF7D464A64B5B7148C18E2096D
+  = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+    --no-startup-window --win-session-start
+  Process: msedge.exe   Parent: setup.exe
+```
+
+A write to a `Run` key during an active intrusion occupies precisely the location used by **T1547.001 Registry Run Keys and Startup Folder**, and it was the only event in the dataset landing in a persistence location. It was cleared on three grounds: the target is the signed Edge binary under `Program Files (x86)` rather than a Temp or AppData path, the switches are Edge's documented background launch behavior, and the writing process is Edge's own installer.
+
+**Finding.** No persistence was established. No modifications to `Winlogon`, `Image File Execution Options`, `LSA`, or `Policies\System`. No new services. No changes to Terminal Server settings, meaning no attempt to preserve RDP access.
+
+> **Note on filter construction.** An earlier version of this query used `has_any` against key paths and produced a false positive on `CurrentVersion\Explorer\Shell Folders`. KQL's `has_any` performs term matching and treats the backslash as a delimiter, so `CurrentVersion\Run` can match on the `CurrentVersion` token alone. The filter was rebuilt using `contains` with a leading backslash.
+
+---
+
+### Step 4 — Was the host calling out? · `DeviceNetworkEvents`
+
+**Question:** Is there network layer evidence of the connection, and did the host contact the source infrastructure?
+
+```kusto
+let MyDevice = "corp-sda1-hs12";
+let AttackerIP = "137.74.119.18";
+DeviceNetworkEvents
+| where DeviceName startswith MyDevice
+| where Timestamp between (datetime(2026-07-29) .. datetime(2026-07-31))
+| where RemoteIP == AttackerIP
+| project Timestamp, ActionType, LocalIP, LocalPort, RemoteIP, RemotePort, Protocol,
+          InitiatingProcessFileName, InitiatingProcessAccountName
+| order by Timestamp asc
+```
+
+<img src="images/04-network-events.png" width="900">
+
+A single record was returned:
+
+| Field | Value |
+|---|---|
+| Timestamp | 2026-07-30 03:29:28 UTC |
+| ActionType | `InboundConnectionAccepted` |
+| Local endpoint | 10.3.0.19:3389 |
+| Remote endpoint | 137.74.119.18:20024 |
+| Protocol | TCP |
+| Process | `svchost.exe` running as `network service` |
+
+This is the strongest single artifact in the investigation, because it captures the accepted connection at the network layer rather than inferring it from an authentication event, and it independently corroborates the logon.
+
+Two conclusions follow. The connection was accepted roughly **62 minutes before** successful authentication, supporting credential guessing over use of a known password. And this is the **only** record of the address in the table, meaning **no outbound connection was ever made back to it**. No callback, no beacon, no command and control channel.
+
+> **Interpretation limit.** `DeviceNetworkEvents` is weighted toward outbound connections and records inbound sessions to listening services inconsistently. The single inbound record is meaningful, but the absence of further inbound records is not evidence about connection volume. That question belongs to flow logs.
+
+---
+
+### Step 5 — Flow level traffic and blocked connections · `NTANetAnalytics`
+
+**Question:** What did the network security group block, and can flow data corroborate the host based findings?
+
+```kusto
+NTANetAnalytics
+| where SrcIp == "137.74.119.18" or DestIp == "137.74.119.18"
+| project TimeGenerated, FlowStartTime, FlowEndTime, FlowType, FlowStatus,
+          SrcIp, SrcPorts, DestIp, DestPort, L4Protocol,
+          AllowedInFlows, DeniedInFlows, NsgRule
+| order by TimeGenerated asc
+```
+
+<img src="images/05-nta-empty.png" width="900">
+
+Zero records. The query ran without a time constraint across the available retention window, and no flow data exists for this address in either direction.
+
+**This is a detection gap rather than a finding about the intruder.** NSG flow logs with Traffic Analytics were never configured to export into the `LAW-Cyber-Range` workspace, so no flow level record of the exposure period exists at all. An empty result from a table that was never populated says nothing about what occurred on the wire.
+
+**Analytical impact:**
+
+- **Denied inbound volume is unmeasured.** The scanning and brute force pressure absorbed while exposed cannot be quantified, which is precisely the metric that would demonstrate the value of the exposure exercise.
+- **Byte counts are unavailable.** Session transfer volume was the last remaining proxy for whether data left the machine.
+- **Threat intelligence enrichment is missing.** Traffic Analytics classifies flows matching Microsoft threat intelligence as `MaliciousFlow`.
+
+**Remediation.** Enable NSG flow logs with Traffic Analytics against `LAW-Cyber-Range` before the next exposure period, so network layer coverage exists independently of the endpoint agent.
+
+---
+
+### Findings
+
+**Confirmed.** An external host obtained interactive administrative access to `corp-sda1-hs12` over RDP and maintained a session for approximately 26 minutes.
+
+**No files were written.** No executables, scripts, or archives attributable to the intruder appear anywhere on disk.
+
+**No persistence was established.** No autostart entries, services, Winlogon modifications, or RDP configuration changes.
+
+**No command and control.** The host never initiated an outbound connection to the source address.
+
+**Telemetry gap identified.** Flow level network logging was not enabled during the exposure period.
+
+### MITRE ATT&CK mapping
+
+| Tactic | Technique | Supporting evidence |
+|---|---|---|
+| Initial Access | T1078.003 Valid Accounts: Local Accounts | Successful `administrator` logon from an external host |
+| Lateral Movement | T1021.001 Remote Services: RDP | LogonType RemoteInteractive, inbound TCP 3389 accepted |
+| Credential Access | T1110 Brute Force *(suspected)* | 62 minute interval between connection and authentication |
+| Discovery | T1083 File and Directory Discovery *(suspected)* | Interactive session with no observable write activity |
+| Persistence | Not observed | No autostart, service, or Winlogon modification |
+| Command and Control | Not observed | No outbound connection to the source address |
+| Exfiltration | Not determinable | No staging evidence; read activity is not logged |
+
+### Limitations
+
+None of these tables record file reads, so whether the intruder viewed the MySQL data, opened configuration files, or enumerated stored credentials is unknown. Browser destinations during the session were not resolved, leaving open the possibility that the host was used as a browsing proxy. With flow logging absent, session transfer volume does not exist as evidence.
+
+The absence of persistence establishes that the intruder did not intend to return. It does not establish that nothing was taken.
+
+### Next steps
+
+1. Resolve Microsoft Edge network destinations for the 04:31 to 04:57 UTC window.
+2. Enable NSG flow logs with Traffic Analytics against `LAW-Cyber-Range`.
+3. Author a detection rule for RemoteInteractive logons from public addresses and validate it against this incident.
+
+</details>
+
+[step4.md](https://github.com/user-attachments/files/31383242/step4.md)
 
 ---
 
