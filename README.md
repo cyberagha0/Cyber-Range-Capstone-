@@ -582,7 +582,7 @@ A successful Guest or Administrator logon means the story continues in MDE:
 | `DeviceNetworkEvents` | Where the box started calling out to |
 | `NTANetAnalytics` | Flow-level traffic, including what the NSG blocked |
 
-Full investigation report — unauthorized RDP access, 2026-07-30 (click to expand)
+###Full investigation report — unauthorized RDP access, 2026-07-30 (click to expand)
 <details>
 <summary><b>📄 Full investigation report — unauthorized RDP access, 2026-07-30 (click to expand)</b></summary>
 
