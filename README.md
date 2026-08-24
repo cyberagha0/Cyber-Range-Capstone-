@@ -32,18 +32,19 @@ have no way to prove you caught the intrusion instead of reconstructing it after
 the fact. Telemetry lands in `LAW-Cyber-Range` for analysis.
 
 ### Phases
-| Phase | Work performed | Result |
-|---|---|---|
-| 1 — Harden | Deployed VM with a corporate-looking hostname, denied all inbound, onboarded to MDE | Telemetry confirmed in `DeviceInfo` |
-| 2 — Install & Populate | MySQL 8.0.45 with realistic `lnp_corp` data, general query log enabled, `my.ini` replaced | Every connection and query recorded to disk |
-| 3 — Wire Logging | Custom text log DCR → `MySQLAudit_CL` via Azure Monitor Agent | Database activity queryable alongside endpoint telemetry |
-| 4 — Detect | Two analytics rules (VM logon, MySQL logon), entity-mapped, validated against the clean baseline | Both returned zero results — no false positives carried into exposure |
-| 5 — Weaken & Expose | Enabled `administrator`/`guest` with weak credentials, opened RDP and 3306, disabled firewall and NSG | Clean-state Investigation Package captured first |
-| 6 — Detect the Breach | Monitored logons, confirmed rule-generated incident, scoped attacker activity | Real intrusion caught by my own detection |
-| 7 — Analyze | Full investigation across five telemetry tables, both incidents documented separately | Two confirmed compromises, root cause established |
-| 8 — Contain | Isolated the device in Defender, pulled a second Investigation Package | Post-breach snapshot for comparison |
-| 9 — Eradicate & Recover | Rebuild-or-harden path documented for host and database | Recovery plan tied to root cause |
 
+| # | Phase |
+|---|---|
+| 1 | Harden |
+| 2 | Install & populate MySQL |
+| 3 | Wire logging to Log Analytics |
+| 4 | Write detections |
+| 5 | Weaken & expose |
+| 6 | Detect the breach |
+| 7 | Analyze the breach |
+| 8 | Contain the breach (isolation) |
+| 9 | Eradication & recovery |
+| 10 | Reporting |
 
 
 
