@@ -581,7 +581,193 @@ A successful Guest or Administrator logon means the story continues in MDE:
 | `DeviceRegistryEvents` | Whether they set up persistence |
 | `DeviceNetworkEvents` | Where the box started calling out to |
 | `NTANetAnalytics` | Flow-level traffic, including what the NSG blocked |
+###Full investigation report on MySql breach 
+###Full investigation report on the MySQL database compromise, traced from a single successful root logon through to confirmed ransom (click to expand)
+<details>
+<summary><b>📄 Full investigation report — MySQL compromise and ransom, 2026-07-29 to 2026-08-15 (click to expand)</b></summary>
 
+### Incident Summary
+
+| | |
+|---|---|
+| **Affected host** | `corp-sda1-hs12` (10.3.0.19) |
+| **Affected service** | MySQL 8.0, exposed on TCP 3306 |
+| **Source address** | 64.89.163.154 (meowcore softworks llc, AS401626, Allentown, Pennsylvania) |
+| **First access** | 2026-07-29 04:06:53 UTC |
+| **Most recent access** | 2026-08-15 20:02:32 UTC |
+| **Successful `root` logins** | 9 |
+| **Failed logins** | 0 |
+| **Classification** | Confirmed database compromise with data destruction and extortion demand |
+
+An internet exposed MySQL instance was accessed nine times over an eighteen day period using valid `root` credentials, with no failed authentication attempts preceding any of them. On each visit, automated tooling dropped the existing database contents, created a database named `RECOVER_YOUR_DATA` containing a single table, and inserted a Bitcoin extortion demand.
+
+This is a materially different intrusion from the RDP compromise documented separately. That event involved extended credential guessing followed by a single brief manual session with no impact. This one shows working credentials from first contact, repeated automated return access, and confirmed destruction of data.
+
+### Timeline
+
+| Time (UTC) | Event | Source |
+|---|---|---|
+| 2026-07-29 04:06:53 | First successful `root` login from 64.89.163.154 | `MySQLAudit_CL` |
+| 2026-07-30 07:17:27 | Destructive sequence executed, ransom note written, 0.0132 BTC demanded | `MySQLAudit_CL` |
+| 2026-07-31 02:10:16 | Sequence repeated, demand adjusted to 0.0131 BTC | `MySQLAudit_CL` |
+| 2026-07-31 07:39:47 | Sequence repeated, demand returned to 0.0132 BTC | `MySQLAudit_CL` |
+| 2026-08-01 to 2026-08-14 | Six further `root` sessions from the same address | `MySQLAudit_CL` |
+| 2026-08-15 20:02:32 | Most recent observed access | `MySQLAudit_CL` |
+
+The first database access on July 29 precedes the RDP intrusion on July 30. The two events involve different source addresses, different countries, and different techniques, and no evidence links them. The ordering is recorded for completeness rather than as an inference.
+
+> **Note on telemetry.** MySQL handles authentication internally, so database logins do not appear in `DeviceLogonEvents`. The MySQL general log is ingested into `LAW-Cyber-Range` as a custom table and parsed with KQL to classify connection outcomes.
+
+---
+
+### Step 1 — Identifying the source · IP entity analysis
+
+**Question:** What is known about the address authenticating to the database?
+
+![Defender IP entity page for 64.89.163.154](images/01-ip-entity-64.89.163.154.png)
+
+The address resolves to meowcore softworks llc on AS401626, carried by Netiface America, geolocated to Allentown, Pennsylvania. Defender reports it observed on organization devices **29 times** within 30 days and correlates it to **28 active alerts across 19 incidents**, weighted toward High and Medium severity.
+
+The contrast with the RDP source is the point worth drawing out:
+
+| | 137.74.119.18 (RDP) | 64.89.163.154 (MySQL) |
+|---|---|---|
+| Sightings in 30 days | 1 | 29 |
+| Defender alerts | None | 28 across 19 incidents |
+| Severity | Suspicious 4/100 | 13 High, 15 Medium |
+
+A small hosting ASN paired with heavy alert volume is a pattern commonly associated with abuse tolerant infrastructure. The alert volume itself is the stronger signal, and the description here is deliberately kept to observation rather than attribution.
+
+---
+
+### Step 2 — Establishing database access · `MySQLAudit_CL`
+
+**Question:** Did this address successfully authenticate to MySQL, and how?
+
+```kusto
+let MyDevice = "corp-sda1-hs12";
+let AttackerIP = "64.89.163.154";
+MySQLAudit_CL
+| extend RawData = replace_string(RawData, "\t", " ")
+| extend DeviceName = tostring(split(_ResourceId, "/")[-1])
+| where DeviceName == MyDevice
+| where RawData has AttackerIP
+| extend ActionType = iff(RawData has "Access denied", "LogonFailure", "LogonSuccess")
+| extend Username = replace_string(tostring(split(tostring(split(RawData,"@")[0]), " ")[-1]), "'", "")
+| project TimeGenerated, Username, ActionType, RawData
+| order by TimeGenerated asc
+```
+
+![Nine successful root logins with zero failures](images/02-mysql-root-logins.png)
+
+Nine successful authentications as `root`, distributed across July 29, August 1 twice, August 2, August 3, August 7, August 8, August 14, and August 15.
+
+**Zero failed attempts.** This is the most significant detail in the result set. The absence of failures establishes that valid credentials were held before the first connection, ruling out brute force as the access vector. The likely explanations are a weak or default `root` password identified by an internet wide scanner, or a credential already known to the operator. Either way, authentication succeeded on first contact.
+
+**Nine sessions across eighteen days** indicates deliberate repeat access rather than opportunistic discovery, with returns at roughly two to three day intervals.
+
+> **Note on query construction.** An earlier version of this query grouped rows by MySQL connection ID and excluded any ID that had also produced a failure. Because MySQL reuses connection IDs, that approach risks discarding a successful authentication that shares an ID with an earlier failed one, which is precisely the event being hunted. The query was rebuilt to classify each row independently on the presence of "Access denied".
+
+---
+
+### Step 3 — Determining what was executed · `MySQLAudit_CL`
+
+**Question:** What actions were performed once the connection was established?
+
+```kusto
+let MyDevice = "corp-sda1-hs12";
+MySQLAudit_CL
+| extend RawData = replace_string(RawData, "\t", " ")
+| extend DeviceName = tostring(split(_ResourceId, "/")[-1])
+| where DeviceName == MyDevice
+| where TimeGenerated between (datetime(2026-07-29) .. datetime(2026-08-16))
+| where RawData has_any ("DROP", "CREATE", "DELETE", "TRUNCATE", "INSERT",
+                         "GRANT", "INTO OUTFILE", "LOAD_FILE")
+| project TimeGenerated, RawData
+| order by TimeGenerated asc
+```
+
+![Destructive SQL sequence and ransom note insertion](images/03-ransom-sql-statements.png)
+
+A consistent five statement sequence appears on each visit:
+
+```sql
+DROP TABLE    `recover_your_data`
+DROP DATABASE `recover_your_data`
+CREATE DATABASE IF NOT EXISTS RECOVER_YOUR_DATA
+CREATE TABLE  IF NOT EXISTS RECOVER_YOUR_DATA (text VARCHAR(255))
+INSERT INTO   RECOVER_YOUR_DATA (text) VALUES
+              ('All your data was backed up by us. You must pay 0.0132 bitcoin to bc1...')
+```
+
+Three characteristics of this sequence are worth documenting.
+
+**It is automated.** All five statements execute within the same second, repeatedly, across multiple visits. The sequences at 07:17:27 on July 30 and 02:10:16 on July 31 both complete in under a second. This is scripted tooling, not interactive operation.
+
+**The demand fluctuates.** The amount appears as 0.0132 BTC on July 30, 0.0131 BTC on July 31 at 02:10, and 0.0132 BTC again at 07:39. A demand pegged to a fixed fiat value and recalculated against live exchange rates is characteristic of automated mass scanning campaigns rather than targeted operations.
+
+**It overwrites its own prior output.** The sequence begins by dropping `recover_your_data` before creating it again, establishing that the tooling was aware of its own previous execution. The nine logins therefore represent the same script re-running rather than nine distinct actions.
+
+> **Scope limitation.** The MySQL general log records statements, not result sets. It cannot show how much data any query returned, so it establishes what was executed but not what was retrieved.
+
+---
+
+### Step 4 — Confirming impact on the host · MySQL Workbench
+
+**Question:** Does the live database state corroborate the log evidence?
+
+![MySQL Workbench showing the RECOVER_YOUR_DATA schema](images/04-workbench-recover-your-data.png)
+
+The schema navigator confirms the log findings directly. The instance contains `recover_your_data` holding a single table with one `text` column, alongside the `sys` system schema.
+
+The more significant observation is what is absent. The application databases originally provisioned on this instance no longer appear. **The ransom note is the visible artifact; the destroyed schema is the actual impact.**
+
+Log evidence and live host state agree, which is the corroboration required to state the compromise as confirmed rather than suspected.
+
+---
+
+### Findings
+
+**Confirmed compromise.** An external host authenticated to MySQL as `root` nine times between 2026-07-29 and 2026-08-15 using valid credentials.
+
+**No brute force occurred.** Zero failed authentication attempts were recorded from this source, establishing that working credentials were held prior to first contact.
+
+**Data destruction confirmed.** Existing database contents were dropped and replaced with a database containing only an extortion demand. Both the general log and the live schema state confirm this.
+
+**Automated tooling.** Sub second execution of a fixed five statement sequence, repeated across nine visits with a demand amount tracking Bitcoin exchange rates, indicates a mass scanning campaign rather than a targeted operation.
+
+**Exfiltration claim unsupported.** The ransom text asserts the data was backed up by the operator. No `SELECT`, `mysqldump`, `INTO OUTFILE`, or `LOAD_FILE` activity against application data appears in the general log.
+
+### MITRE ATT&CK mapping
+
+| Tactic | Technique | Supporting evidence |
+|---|---|---|
+| Initial Access | T1190 Exploit Public-Facing Application | MySQL reachable from the public internet on TCP 3306 |
+| Initial Access | T1078 Valid Accounts | Nine successful `root` authentications with zero failures |
+| Impact | T1485 Data Destruction | `DROP DATABASE` and `DROP TABLE` against application schemas |
+| Impact | T1657 Financial Theft | Bitcoin demand written to `RECOVER_YOUR_DATA` |
+| Exfiltration | Not observed | No read or export activity present in the general log |
+| Persistence | Not observed | No account creation or `GRANT` statements recorded |
+
+### Limitations
+
+The MySQL general log records statements, not result sets, so the volume of data returned by any query cannot be determined from it. Flow level network telemetry was not enabled during this period, so session byte counts are unavailable as a corroborating measure of data movement. Together these gaps mean the exfiltration claim can be described as unsupported by available evidence, but cannot be conclusively disproved.
+
+The `root` password itself was not recovered during this investigation, so whether the credential was guessed, default, or previously leaked remains undetermined.
+
+### Root cause
+
+MySQL was reachable from the public internet on its default port with a `root` account accepting remote connections. Internet wide scanners identify exposed database services continuously, and an instance in this configuration is typically located within hours of exposure. The absence of failed authentication attempts indicates the credential offered no meaningful resistance.
+
+### Remediation
+
+1. Restrict TCP 3306 at the network security group to known source addresses. The database should not accept connections from the public internet.
+2. Disable remote `root` authentication and enforce least privilege for application accounts.
+3. Rotate all database credentials and require complexity that resists dictionary attack.
+4. Enable NSG flow logs with Traffic Analytics against `LAW-Cyber-Range` to provide byte level visibility for future incidents.
+5. Author a detection rule for successful MySQL authentication from public addresses, and a second for `DROP DATABASE` execution, validating both against this incident.
+
+</details>
 ###Full investigation report on single Successful Logon event to showcase how it would be done in real SOC environment threat hunting (click to expand)
 <details>
 <summary><b>📄 Full investigation report — unauthorized RDP access, 2026-07-30 (click to expand)</b></summary>
@@ -860,20 +1046,6 @@ With the VM confirmed powered on, we isolated the device through the Defender po
 
 <img width="616" height="713" alt="image" src="https://github.com/user-attachments/assets/b8adc96a-e7e2-44e4-89b3-0d81591fdd8a" />
 
-
-### Evidence
-
-**Screenshot 1 — Isolation confirmation in the Defender portal**
-
-`[ insert screenshot here ]`
-
-**Screenshot 2 — Device timeline entry showing the isolation action and its timestamp**
-
-`[ insert screenshot here ]`
-
-**Screenshot 3 — Investigation Package collection (post-isolation)**
-
-`[ insert screenshot here ]`
 
 
 ## Phase 9 — Eradication & Recovery
