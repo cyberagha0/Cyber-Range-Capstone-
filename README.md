@@ -465,4 +465,138 @@ Real intrusion, detected by my own rule, fully reconstructed from telemetry.
 
 **Detection gaps:** *fill in* — what the rules missed and what I'd write next.
 
+# Phase 7 — Analyze the Breach
 
+![Phase](https://img.shields.io/badge/Phase-7%20of%208-blue)
+![Platform](https://img.shields.io/badge/Azure-Microsoft%20Sentinel-0078D4)
+![EDR](https://img.shields.io/badge/EDR-Defender%20for%20Endpoint-00A4EF)
+![Language](https://img.shields.io/badge/Query-KQL-orange)
+
+> **Live-Exposed Honeypot Lab** — LOG(N) Pacific Cyber Range Capstone
+> **Host:** `CORP-SDA1-HS12` · **Workspace:** `LAW-Cyber-Range`
+
+---
+
+## Objective
+
+This phase can't be a step-by-step. What happens to the box depends entirely on who finds it and what they decide to try. So the job here is to watch, pivot, and take good notes until the data is worth something.
+
+---
+
+## Step 1 — Set up a place to take notes
+
+Made my own copy of the Helper Queries doc and used it as a working notebook — queries I ran, log excerpts, timestamps, and anything I wasn't sure about. Writing things down as they happened meant the final analysis came from notes instead of memory.
+
+> 📸 `![Notes doc](./screenshots/phase7-01-notebook.png)`
+
+---
+
+## Step 2 — Keep watching the authentication logs
+
+Ran the VM and MySQL logon queries repeatedly over the exposure window.
+
+```kusto
+let MyDevice = "corp-sda1-hs12";
+DeviceLogonEvents
+| where DeviceName =~ MyDevice
+| where AccountName in~ ("administrator", "guest")
+| summarize Attempts = count(), First = min(TimeGenerated), Last = max(TimeGenerated)
+    by ActionType, AccountName, RemoteIP
+| order by Attempts desc
+```
+
+Most of what shows up is noise — automated scanners hammering `root` and `administrator` from rotating IPs. The thing to watch for is one IP that fails a lot and then succeeds once. That timestamp is the whole story.
+
+> 📸 `![Logon activity](./screenshots/phase7-02-logons.png)`
+
+---
+
+## Step 3 — Follow the MySQL query log
+
+Once someone actually gets in, the query log is where intent shows up.
+
+```kusto
+MySQLAudit_CL
+| where RawData has "Query"
+| extend RawData = replace_string(RawData, "\t", " ")
+| extend DeviceName = tostring(split(_ResourceId, "/")[-1])
+| extend Query = split(RawData, "Query")[1]
+| project TimeGenerated, DeviceName, Query, RawData
+| order by TimeGenerated desc
+```
+
+`SHOW DATABASES` and `information_schema` is someone looking around. `mysql.user`, `CREATE USER`, `GRANT`, or `INTO OUTFILE` is someone with a plan.
+
+> 📸 `![MySQL queries](./screenshots/phase7-03-mysql-queries.png)`
+
+---
+
+## Step 4 — If they reached the OS, follow them into Defender
+
+A successful Guest or Administrator logon means the story continues in MDE. I worked through these against the breach window:
+
+| Table | What it answers |
+|---|---|
+| `DeviceProcessEvents` | What they ran |
+| `DeviceFileEvents` | What they dropped or took |
+| `DeviceRegistryEvents` | Whether they set up persistence |
+| `DeviceNetworkEvents` | Where the box started calling out to |
+| `NTANetAnalytics` | Flow-level traffic, including what the NSG blocked |
+
+```kusto
+let MyDevice = "corp-sda1-hs12";
+NTANetAnalytics
+| where isnotempty(SrcVm)
+| where SrcVm endswith MyDevice
+| where DeniedOutFlows >= 1
+| project TimeGenerated, FlowType, FlowStatus, SrcIp, SrcPorts, DestIp, DestPort
+```
+
+> 📸 `![Defender telemetry](./screenshots/phase7-04-mde.png)`
+
+---
+
+## Step 5 — Let it run, then shut it down
+
+The lab asks for 24 hours minimum. I left everything reachable for **[FILL IN]** hours, until the activity started repeating and nothing new was showing up.
+
+Before deallocating I exported the tables to CSV — the VM goes away, the logs shouldn't. Then I stopped the VM and put the deny-all inbound rule back on the NSG.
+
+> 📸 `![Shutdown](./screenshots/phase7-05-shutdown.png)`
+
+---
+
+## Step 6 — Run the logs through AI
+
+Three separate passes: MySQL authentication, MySQL queries, and Defender host logs. Same prompt each time, log type swapped in:
+
+```text
+You are a god-tier cybersecurity analyst with world-class threat hunting skills.
+Please look at these logs, these are <MySQL Server Authentication / MySQL Server
+Query / Microsoft Defender (MDE)> logs from my environment.
+Please analyze them and paint a picture for what might be going on.
+```
+
+I treated the output as a starting point, not an answer. Anything it claimed, I went back and checked against the raw logs. Some of it held up, some of it was a reasonable guess with nothing behind it, and a couple of things were flat wrong. All three got noted — knowing where the model overreaches is part of the point.
+
+> 📸 `![AI analysis](./screenshots/phase7-06-ai-analysis.png)`
+
+---
+
+## What I found
+
+*[Fill in from the notes.]*
+
+| | |
+|---|---|
+| Exposure window | *[FILL IN]* |
+| Distinct source IPs | *[FILL IN]* |
+| Failed logins | *[FILL IN]* |
+| Successful logins | *[FILL IN]* |
+| Time to first contact | *[FILL IN]* |
+
+Short version of the attack: *[who reached the box, how they got in, what they did once they were there, and how far they got before I pulled the plug].*
+
+---
+
+**Next:** [Phase 8](./phase-8.md)
