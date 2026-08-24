@@ -581,10 +581,9 @@ A successful Guest or Administrator logon means the story continues in MDE:
 | `DeviceRegistryEvents` | Whether they set up persistence |
 | `DeviceNetworkEvents` | Where the box started calling out to |
 | `NTANetAnalytics` | Flow-level traffic, including what the NSG blocked |
-###Full investigation report on MySql breach 
-###Full investigation report on the MySQL database compromise, traced from a single successful root logon through to confirmed ransom (click to expand)
+
 <details>
-<summary><b>📄 Full investigation report — MySQL compromise and ransom, 2026-07-29 to 2026-08-15 (click to expand)</b></summary>
+<summary><b>📄Full investigation report on the MySQL database compromise, traced from a single successful root logon through to confirmed ransom (click to expand) (click to expand)</b></summary>
 
 ### Incident Summary
 
@@ -624,7 +623,9 @@ The first database access on July 29 precedes the RDP intrusion on July 30. The 
 
 **Question:** What is known about the address authenticating to the database?
 
-![Defender IP entity page for 64.89.163.154](images/01-ip-entity-64.89.163.154.png)
+![Defender IP entity page for 64.89.163.154]
+<img width="534" height="864" alt="image" src="https://github.com/user-attachments/assets/444bad37-040d-4c48-9fbe-80439b66c894" />
+
 
 The address resolves to meowcore softworks llc on AS401626, carried by Netiface America, geolocated to Allentown, Pennsylvania. Defender reports it observed on organization devices **29 times** within 30 days and correlates it to **28 active alerts across 19 incidents**, weighted toward High and Medium severity.
 
@@ -658,7 +659,8 @@ MySQLAudit_CL
 | order by TimeGenerated asc
 ```
 
-![Nine successful root logins with zero failures](images/02-mysql-root-logins.png)
+![Nine successful root logins with zero failures]
+<img width="1094" height="407" alt="image" src="https://github.com/user-attachments/assets/08c23a98-b023-4ac2-b9f1-4b1b4e10e631" />
 
 Nine successful authentications as `root`, distributed across July 29, August 1 twice, August 2, August 3, August 7, August 8, August 14, and August 15.
 
@@ -687,7 +689,8 @@ MySQLAudit_CL
 | order by TimeGenerated asc
 ```
 
-![Destructive SQL sequence and ransom note insertion](images/03-ransom-sql-statements.png)
+![Destructive SQL sequence and ransom note insertion]
+<img width="1043" height="484" alt="image" src="https://github.com/user-attachments/assets/3100084a-8e9a-4e13-b683-56899bb9e329" />
 
 A consistent five statement sequence appears on each visit:
 
@@ -716,7 +719,8 @@ Three characteristics of this sequence are worth documenting.
 
 **Question:** Does the live database state corroborate the log evidence?
 
-![MySQL Workbench showing the RECOVER_YOUR_DATA schema](images/04-workbench-recover-your-data.png)
+![MySQL Workbench showing the RECOVER_YOUR_DATA schema]
+<img width="691" height="598" alt="image" src="https://github.com/user-attachments/assets/f550691d-0c86-4c85-9eb4-65f4c96c326c" />
 
 The schema navigator confirms the log findings directly. The instance contains `recover_your_data` holding a single table with one `text` column, alongside the `sys` system schema.
 
@@ -768,9 +772,9 @@ MySQL was reachable from the public internet on its default port with a `root` a
 5. Author a detection rule for successful MySQL authentication from public addresses, and a second for `DROP DATABASE` execution, validating both against this incident.
 
 </details>
-###Full investigation report on single Successful Logon event to showcase how it would be done in real SOC environment threat hunting (click to expand)
+###
 <details>
-<summary><b>📄 Full investigation report — unauthorized RDP access, 2026-07-30 (click to expand)</b></summary>
+<summary><b>📄 Full investigation report on single Successful Logon event to showcase how it would be done in real SOC environment threat hunting — unauthorized RDP access, 2026-07-30 (click to expand)</b></summary>
 
 <br>
 
