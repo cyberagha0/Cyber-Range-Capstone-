@@ -467,11 +467,6 @@ Real intrusion, detected by my own rule, fully reconstructed from telemetry.
 
 # Phase 7 — Analyze the Breach
 
-![Phase](https://img.shields.io/badge/Phase-7%20of%208-blue)
-![Platform](https://img.shields.io/badge/Azure-Microsoft%20Sentinel-0078D4)
-![EDR](https://img.shields.io/badge/EDR-Defender%20for%20Endpoint-00A4EF)
-![Language](https://img.shields.io/badge/Query-KQL-orange)
-
 > **Live-Exposed Honeypot Lab** — LOG(N) Pacific Cyber Range Capstone
 > **Host:** `CORP-SDA1-HS12` · **Workspace:** `LAW-Cyber-Range`
 
@@ -487,41 +482,69 @@ This phase can't be a step-by-step. What happens to the box depends entirely on 
 
 Made my own copy of the Helper Queries doc and used it as a working notebook — queries I ran, log excerpts, timestamps, and anything I wasn't sure about. Writing things down as they happened meant the final analysis came from notes instead of memory.
 
+Every query below is anchored to the moment the box went vulnerable, so nothing from the clean baseline period pollutes the results.
+
 > 📸 `![Notes doc](./screenshots/phase7-01-notebook.png)`
 
 ---
 
-## Step 2 — Keep watching the authentication logs
+## Step 2 — MySQL authentication
 
-Ran the VM and MySQL logon queries repeatedly over the exposure window.
+This one separates real logins from failed ones. MySQL logs both under `Connect`, so the query first collects every connection ID that got `Access denied`, then throws those out of the results — what's left actually got in.
 
 ```kusto
 let MyDevice = "corp-sda1-hs12";
-DeviceLogonEvents
+let MyTimeframe = todatetime("2026-08-XX T00:00:00Z"); // when the box went vulnerable
+let FailedConnections =
+MySQLAudit_CL
+| extend RawData = replace_string(RawData, "\t", " ")
+| extend DeviceName = tostring(split(_ResourceId, "/")[-1])
 | where DeviceName =~ MyDevice
-| where AccountName in~ ("administrator", "guest")
-| summarize Attempts = count(), First = min(TimeGenerated), Last = max(TimeGenerated)
-    by ActionType, AccountName, RemoteIP
-| order by Attempts desc
+| where RawData has "Access denied"
+| extend ConnectionId = extract(@"^\S+\s+(\d+)\s+Connect", 1, RawData)
+| distinct ConnectionId;
+MySQLAudit_CL
+| where TimeGenerated > MyTimeframe
+| extend RawData = replace_string(RawData, "\t", " ")
+| extend DeviceName = tostring(split(_ResourceId, "/")[-1])
+| where DeviceName =~ MyDevice
+| where RawData has "Connect"
+| extend ConnectionId = extract(@"^\S+\s+(\d+)\s+Connect", 1, RawData)
+| extend ActionType =
+    case(
+        RawData has "Access denied", "LogonFailure",
+        ConnectionId in (FailedConnections), "Ignore",
+        "LogonSuccess"
+    )
+| where ActionType != "Ignore"
+| extend Username = replace_string(tostring(split(tostring(split(RawData,"@")[0]), " ")[-1]), "'", "")
+| extend IpAddress = replace_string(tostring(split(split(RawData,"@")[1], " ")[0]), "'", "")
+| project TimeGenerated, DeviceName, Username, IpAddress, ActionType, RawData
+| order by TimeGenerated desc
 ```
 
-Most of what shows up is noise — automated scanners hammering `root` and `administrator` from rotating IPs. The thing to watch for is one IP that fails a lot and then succeeds once. That timestamp is the whole story.
+Most of it is `LogonFailure` — scanners hammering `root` from rotating IPs. What matters is a `LogonSuccess`, and especially an IP that fails repeatedly and then succeeds once. That timestamp anchors everything else.
 
-> 📸 `![Logon activity](./screenshots/phase7-02-logons.png)`
+> 📸 `![MySQL auth](./screenshots/phase7-02-mysql-auth.png)`
 
 ---
 
-## Step 3 — Follow the MySQL query log
+## Step 3 — MySQL queries
 
-Once someone actually gets in, the query log is where intent shows up.
+Once someone's in, the query log is where intent shows up.
 
 ```kusto
+let MyDevice = "corp-sda1-hs12";
+let ServerVulnerableDateTime = todatetime("2026-08-XX T00:00:00Z");
 MySQLAudit_CL
+| where TimeGenerated > ServerVulnerableDateTime
 | where RawData has "Query"
 | extend RawData = replace_string(RawData, "\t", " ")
 | extend DeviceName = tostring(split(_ResourceId, "/")[-1])
+| where DeviceName =~ MyDevice
+| extend ActionType = "Query"
 | extend Query = split(RawData, "Query")[1]
-| project TimeGenerated, DeviceName, Query, RawData
+| project TimeGenerated, DeviceName, ActionType, Query, RawData
 | order by TimeGenerated desc
 ```
 
@@ -531,9 +554,27 @@ MySQLAudit_CL
 
 ---
 
-## Step 4 — If they reached the OS, follow them into Defender
+## Step 4 — Virtual machine logons
 
-A successful Guest or Administrator logon means the story continues in MDE. I worked through these against the breach window:
+```kusto
+let MyDevice = "corp-sda1-hs12"; // MDE truncates at 15 chars — mine fits, so no cutoff
+let ServerVulnerableDateTime = todatetime("2026-08-XX T00:00:00Z");
+DeviceLogonEvents
+| where TimeGenerated > ServerVulnerableDateTime
+| where DeviceName =~ MyDevice
+| where AccountName in~ ("administrator", "guest")
+| project TimeGenerated, RemoteIP, AccountName, DeviceName, ActionType, LogonType
+```
+
+A note on `=~`. The helper query uses `==`, which is case-sensitive in KQL. MDE doesn't always store the device name in the casing you expect, and a mismatch returns nothing at all — no error, just an empty table. I learned this the hard way in Phase 6, when a detection rule ran over 4,000 times without firing for exactly this reason. Every query in this phase uses `=~` instead.
+
+> 📸 `![VM logons](./screenshots/phase7-04-vm-logons.png)`
+
+---
+
+## Step 5 — If they reached the OS, follow them into Defender
+
+A successful Guest or Administrator logon means the story continues in MDE:
 
 | Table | What it answers |
 |---|---|
@@ -552,21 +593,21 @@ NTANetAnalytics
 | project TimeGenerated, FlowType, FlowStatus, SrcIp, SrcPorts, DestIp, DestPort
 ```
 
-> 📸 `![Defender telemetry](./screenshots/phase7-04-mde.png)`
+> 📸 `![Defender telemetry](./screenshots/phase7-05-mde.png)`
 
 ---
 
-## Step 5 — Let it run, then shut it down
+## Step 6 — Let it run, then shut it down
 
 The lab asks for 24 hours minimum. I left everything reachable for **[FILL IN]** hours, until the activity started repeating and nothing new was showing up.
 
 Before deallocating I exported the tables to CSV — the VM goes away, the logs shouldn't. Then I stopped the VM and put the deny-all inbound rule back on the NSG.
 
-> 📸 `![Shutdown](./screenshots/phase7-05-shutdown.png)`
+> 📸 `![Shutdown](./screenshots/phase7-06-shutdown.png)`
 
 ---
 
-## Step 6 — Run the logs through AI
+## Step 7 — Run the logs through AI
 
 Three separate passes: MySQL authentication, MySQL queries, and Defender host logs. Same prompt each time, log type swapped in:
 
@@ -579,7 +620,7 @@ Please analyze them and paint a picture for what might be going on.
 
 I treated the output as a starting point, not an answer. Anything it claimed, I went back and checked against the raw logs. Some of it held up, some of it was a reasonable guess with nothing behind it, and a couple of things were flat wrong. All three got noted — knowing where the model overreaches is part of the point.
 
-> 📸 `![AI analysis](./screenshots/phase7-06-ai-analysis.png)`
+> 📸 `![AI analysis](./screenshots/phase7-07-ai-analysis.png)`
 
 ---
 
@@ -598,5 +639,3 @@ I treated the output as a starting point, not an answer. Anything it claimed, I 
 Short version of the attack: *[who reached the box, how they got in, what they did once they were there, and how far they got before I pulled the plug].*
 
 ---
-
-**Next:** [Phase 8](./phase-8.md)
