@@ -32,14 +32,19 @@ have no way to prove you caught the intrusion instead of reconstructing it after
 the fact. Telemetry lands in `LAW-Cyber-Range` for analysis.
 
 ### Phases
+| Phase | Work performed | Result |
+|---|---|---|
+| 1 — Harden | Deployed VM with a corporate-looking hostname, denied all inbound, onboarded to MDE | Telemetry confirmed in `DeviceInfo` |
+| 2 — Install & Populate | MySQL 8.0.45 with realistic `lnp_corp` data, general query log enabled, `my.ini` replaced | Every connection and query recorded to disk |
+| 3 — Wire Logging | Custom text log DCR → `MySQLAudit_CL` via Azure Monitor Agent | Database activity queryable alongside endpoint telemetry |
+| 4 — Detect | Two analytics rules (VM logon, MySQL logon), entity-mapped, validated against the clean baseline | Both returned zero results — no false positives carried into exposure |
+| 5 — Weaken & Expose | Enabled `administrator`/`guest` with weak credentials, opened RDP and 3306, disabled firewall and NSG | Clean-state Investigation Package captured first |
+| 6 — Detect the Breach | Monitored logons, confirmed rule-generated incident, scoped attacker activity | Real intrusion caught by my own detection |
+| 7 — Analyze | Full investigation across five telemetry tables, both incidents documented separately | Two confirmed compromises, root cause established |
+| 8 — Contain | Isolated the device in Defender, pulled a second Investigation Package | Post-breach snapshot for comparison |
+| 9 — Eradicate & Recover | Rebuild-or-harden path documented for host and database | Recovery plan tied to root cause |
 
-| # | Phase | What happens | Output |
-|---|-------|--------------|--------|
-| 1 | **Harden** | Build the Windows VM + MySQL, apply baseline hardening | Documented secure build |
-| 2 | **Instrument** | Wire telemetry into `LAW-Cyber-Range` | Verified log ingestion |
-| 3 | **Baseline** | Capture normal behavior while the box is quiet | Known-good activity profile |
-| 4 | **Detect** | Author ATT&CK-mapped analytics rules | Detection rule set + KQL |
-| 5 | **Weaken & Expose** | Reduce controls, open to the internet, wait | Live incident + investigation |
+
 
 
 ### Honeypot Architecture 
@@ -1074,3 +1079,66 @@ If wiping the VM isn't on the table, the fallback is to lock the host down, lock
 - Either set a strong password on the network-facing `root` account or drop it
 - Bring the data back — see [Phase 2 — Install & populate MySQL](https://docs.google.com/document/d/1KSbUWZmTBgxRuytw95Rx3OCNAw_43ysw_yz7AWMaO90/edit?tab=t.0#bookmark=id.glhfao7c8e5m)
   - Have an actual backup? [Restore it the real way](https://dev.mysql.com/doc/workbench/en/wb-admin-export-import-management.html)
+ 
+
+## Phase 10 — Reporting
+
+### Project Summary
+
+**Live-Exposed Honeypot Lab** · Azure · Microsoft Sentinel + Defender for Endpoint · `LAW-Cyber-Range`
+
+A Windows 11 VM (`CORP-SDA1-HS12`) running MySQL 8.0 was built hardened, fully instrumented, baselined while quiet, and fitted with ATT&CK-mapped detection rules — and only then deliberately weakened and opened to the public internet. The ordering was the design constraint: detections had to exist and prove themselves silent *before* exposure, so any alert that followed was a real intrusion rather than a reconstruction after the fact.
+
+Exposure began at `2026-07-30T04:31:21.9289822Z`. Two unrelated intrusions followed.
+
+---
+
+### Phase Walkthrough
+
+| Phase | Work performed | Result |
+|---|---|---|
+| 1 — Harden | Deployed VM with a corporate-looking hostname, denied all inbound, onboarded to MDE | Telemetry confirmed in `DeviceInfo` |
+| 2 — Install & Populate | MySQL 8.0.45 with realistic `lnp_corp` data, general query log enabled, `my.ini` replaced | Every connection and query recorded to disk |
+| 3 — Wire Logging | Custom text log DCR → `MySQLAudit_CL` via Azure Monitor Agent | Database activity queryable alongside endpoint telemetry |
+| 4 — Detect | Two analytics rules (VM logon, MySQL logon), entity-mapped, validated against the clean baseline | Both returned zero results — no false positives carried into exposure |
+| 5 — Weaken & Expose | Enabled `administrator`/`guest` with weak credentials, opened RDP and 3306, disabled firewall and NSG | Clean-state Investigation Package captured first |
+| 6 — Detect the Breach | Monitored logons, confirmed rule-generated incident, scoped attacker activity | Real intrusion caught by my own detection |
+| 7 — Analyze | Full investigation across five telemetry tables, both incidents documented separately | Two confirmed compromises, root cause established |
+| 8 — Contain | Isolated the device in Defender, pulled a second Investigation Package | Post-breach snapshot for comparison |
+| 9 — Eradicate & Recover | Rebuild-or-harden path documented for host and database | Recovery plan tied to root cause |
+
+---
+
+### Incidents
+
+**RDP compromise — 137.74.119.18 (OVH SAS, France)**
+Inbound TCP 3389 accepted at 03:29:28 UTC; successful `administrator` logon 62 minutes later, consistent with credential guessing. Approximately 26 minutes of interactive access with full administrative privileges. No files written, no persistence established, no outbound connection back to the source. The only substantive action was launching a browser.
+
+**MySQL compromise — 64.89.163.154 (AS401626)**
+Nine successful `root` authentications between July 29 and August 15 with **zero failed attempts** — working credentials were held before first contact, ruling out brute force. Automated tooling executed the same five-statement sequence sub-second on each visit: drop the application schemas, create `RECOVER_YOUR_DATA`, insert a Bitcoin extortion demand. The demand tracked live exchange rates (0.0132 → 0.0131 → 0.0132 BTC), and the script dropped its own prior output before recreating it — signatures of a mass scanning campaign, not a targeted operation. Data destruction confirmed by both log evidence and live schema state. The exfiltration claim in the ransom note is unsupported: no `SELECT`, `mysqldump`, `INTO OUTFILE`, or `LOAD_FILE` activity against application data appears anywhere in the general log.
+
+---
+
+### Lessons Learned
+
+**A rule that never fires looks identical to a quiet network.** My first VM logon detection ran over 4,000 times without producing a single alert. The cause was `==` in KQL, which is case-sensitive, against a device name MDE stored in different casing. No error, no empty-table warning — just silence that read as "nothing is happening." Every query in the project was rewritten to use `=~`. This is the single most transferable finding here: silent detection failure is indistinguishable from success until you deliberately test for it.
+
+**Query logic can discard the exact event you're hunting.** My original MySQL authentication query grouped by connection ID and excluded any ID that had also produced an `Access denied`. MySQL reuses connection IDs — meaning a genuine success sharing an ID with an earlier failure would be thrown out. The query was rebuilt to classify each row independently. Clever filtering is a liability when the thing being filtered is the finding.
+
+**Baseline diffs lose their power against a first logon.** Filtering registry activity against a seven-day baseline still left 292 events, because a newly created user profile makes every user-scoped key new by definition. Windows instantiated 229 per-user service keys in a single timestamp. The technique still helped, but far less than it normally would — worth knowing before trusting it in a real triage.
+
+**Parent process is what separates a finding from a false positive.** `sdbinst.exe` writing an `.sdb` file maps cleanly to T1546.011. `schtasks.exe` writing a CSV maps to T1053.005. A `Run` key written mid-intrusion sits precisely where T1547.001 lives. All three were benign, and the *only* evidence establishing that was parentage and account context. Pattern-matching to a technique ID without checking who spawned the process manufactures incidents.
+
+**You cannot investigate telemetry you never enabled.** NSG flow logs with Traffic Analytics were never configured, so `NTANetAnalytics` returned zero records across the entire exposure window. That cost me the denied-inbound volume — the exact metric that would have quantified the internet-facing pressure the box absorbed — plus session byte counts, which were the last available proxy for whether data actually left. An empty table from a source that was never populated says nothing at all. Instrumentation gaps have to be closed before the incident, not discovered during it.
+
+**Timestamp normalization is a real analytical hazard.** Advanced Hunting exports in local time while the portal displays UTC. Correlating raw exports without converting makes related events appear four hours apart and fractures a timeline that is actually contiguous.
+
+**Exposure works faster than expected, and default ports are found first.** The MySQL instance was accessed by a scanner within hours of going live, and the first database access preceded the RDP intrusion entirely — different source, different country, different technique, no evidence linking them. Two independent actors found one host in under two days.
+
+**Absence of evidence needs to be stated as such.** Several conclusions in this project are bounded by what the logs *can't* record. The MySQL general log captures statements, not result sets. `DeviceFileEvents` captures writes, not reads. Both incidents ended with findings written as "not observed" or "not determinable" rather than "did not occur" — a distinction that matters more in reporting than anywhere else in the process.
+
+---
+
+### Outcome
+
+An internet-exposed asset was hardened, instrumented, detected on, breached by two unrelated real-world actors, investigated end-to-end from telemetry, contained, and given a documented recovery path. Both intrusions were caught by detections authored before exposure. The detection gaps found along the way — the case-sensitivity failure, the connection-ID logic flaw, and the missing flow telemetry — are the most useful output of the project.
