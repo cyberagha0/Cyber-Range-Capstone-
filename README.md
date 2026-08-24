@@ -355,7 +355,7 @@ Both queries were run manually across the full baseline window before enabling t
 
 > 📸 **Screenshot:** Analytics rules list showing both rules **Enabled**, and a query returning no results.
 
-<img width="1498" height="488" alt="image" src="https://github.com/user-attachments/assets/f7407eb9-8647-420e-a289-69d3fe4b7bd0" />
+<img width="1412" height="424" alt="image" src="https://github.com/user-attachments/assets/a4f6f3e8-72f1-4a72-bb26-3fb1f5340b42" />
 
 
 **Phase 4 complete.** Detections are live and quiet. The next alert will come from someone who isn't me.
