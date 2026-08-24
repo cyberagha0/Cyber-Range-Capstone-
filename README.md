@@ -838,6 +838,9 @@ Zero records. The query ran without a time constraint across the available reten
 | Command and Control | Not observed | No outbound connection to the source address |
 | Exfiltration | Not determinable | No staging evidence; read activity is not logged |
 
+</details>
+
+
 ## Phase 8 — Contain the Breach (Isolation)
 
 With the VM confirmed powered on, we isolated the device through the Defender portal to cut off any remaining attacker access while keeping the host available for forensic collection. Immediately after isolation took effect, we pulled a second Investigation Package from the same device — this gives us an "after" snapshot to diff against the package captured earlier in the investigation, so we can see exactly what the attacker left on the system.
