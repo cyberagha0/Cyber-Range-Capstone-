@@ -467,9 +467,6 @@ Real intrusion, detected by my own rule, fully reconstructed from telemetry.
 
 # Phase 7 — Analyze the Breach
 
-> **Live-Exposed Honeypot Lab** — LOG(N) Pacific Cyber Range Capstone
-> **Host:** `CORP-SDA1-HS12` · **Workspace:** `LAW-Cyber-Range`
-
 ---
 
 ## Objective
@@ -478,23 +475,17 @@ This phase can't be a step-by-step. What happens to the box depends entirely on 
 
 ---
 
-## Step 1 — Set up a place to take notes
-
-Made my own copy of the Helper Queries doc and used it as a working notebook — queries I ran, log excerpts, timestamps, and anything I wasn't sure about. Writing things down as they happened meant the final analysis came from notes instead of memory.
-
 Every query below is anchored to the moment the box went vulnerable, so nothing from the clean baseline period pollutes the results.
-
-> 📸 `![Notes doc](./screenshots/phase7-01-notebook.png)`
 
 ---
 
-## Step 2 — MySQL authentication
+## Step 1 — MySQL authentication
 
 This one separates real logins from failed ones. MySQL logs both under `Connect`, so the query first collects every connection ID that got `Access denied`, then throws those out of the results — what's left actually got in.
 
 ```kusto
 let MyDevice = "corp-sda1-hs12";
-let MyTimeframe = todatetime("2026-08-XX T00:00:00Z"); // when the box went vulnerable
+let MyTimeframe = todatetime("2026-07-30T04:31:21.9289822Z"); // when the box went vulnerable
 let FailedConnections =
 MySQLAudit_CL
 | extend RawData = replace_string(RawData, "\t", " ")
@@ -525,17 +516,20 @@ MySQLAudit_CL
 
 Most of it is `LogonFailure` — scanners hammering `root` from rotating IPs. What matters is a `LogonSuccess`, and especially an IP that fails repeatedly and then succeeds once. That timestamp anchors everything else.
 
-> 📸 `![MySQL auth](./screenshots/phase7-02-mysql-auth.png)`
+> 📸 `![MySQL auth]
+
+<img width="1009" height="869" alt="image" src="https://github.com/user-attachments/assets/45e46394-939c-4142-8e58-cbd76cf63c09" />
+
 
 ---
 
-## Step 3 — MySQL queries
+## Step 2 — MySQL queries
 
 Once someone's in, the query log is where intent shows up.
 
 ```kusto
 let MyDevice = "corp-sda1-hs12";
-let ServerVulnerableDateTime = todatetime("2026-08-XX T00:00:00Z");
+let ServerVulnerableDateTime = todatetime("2026-07-30T04:31:21.9289822Z");
 MySQLAudit_CL
 | where TimeGenerated > ServerVulnerableDateTime
 | where RawData has "Query"
@@ -548,17 +542,19 @@ MySQLAudit_CL
 | order by TimeGenerated desc
 ```
 
-`SHOW DATABASES` and `information_schema` is someone looking around. `mysql.user`, `CREATE USER`, `GRANT`, or `INTO OUTFILE` is someone with a plan.
+`DROP DATABASE`, 'recover_your_data' and ` CREATE DATABASE IF NOT EXISTS RECOVER_YOUR_DATA`  someone looking actively creating, dropping and ransoming database.
 
-> 📸 `![MySQL queries](./screenshots/phase7-03-mysql-queries.png)`
+> 📸 `![MySQL queries]
+
+<img width="981" height="826" alt="image" src="https://github.com/user-attachments/assets/7676107c-dc1e-4b43-b034-d13a0f56954b" />
 
 ---
 
-## Step 4 — Virtual machine logons
+## Step 3 — Virtual machine logons
 
 ```kusto
 let MyDevice = "corp-sda1-hs12"; // MDE truncates at 15 chars — mine fits, so no cutoff
-let ServerVulnerableDateTime = todatetime("2026-08-XX T00:00:00Z");
+let ServerVulnerableDateTime = todatetime("2026-07-30T04:31:21.9289822Z");
 DeviceLogonEvents
 | where TimeGenerated > ServerVulnerableDateTime
 | where DeviceName =~ MyDevice
@@ -568,11 +564,13 @@ DeviceLogonEvents
 
 A note on `=~`. The helper query uses `==`, which is case-sensitive in KQL. MDE doesn't always store the device name in the casing you expect, and a mismatch returns nothing at all — no error, just an empty table. I learned this the hard way in Phase 6, when a detection rule ran over 4,000 times without firing for exactly this reason. Every query in this phase uses `=~` instead.
 
-> 📸 `![VM logons](./screenshots/phase7-04-vm-logons.png)`
+> 📸 `![VM logons]
+
+<img width="1006" height="841" alt="image" src="https://github.com/user-attachments/assets/c5d0c16e-ed7e-466d-833f-c7af32542eeb" />
 
 ---
 
-## Step 5 — If they reached the OS, follow them into Defender
+## Step 4 — If they reached the OS, follow them into Defender
 
 A successful Guest or Administrator logon means the story continues in MDE:
 
@@ -597,7 +595,7 @@ NTANetAnalytics
 
 ---
 
-## Step 6 — Let it run, then shut it down
+## Step 5 — Let it run, then shut it down
 
 The lab asks for 24 hours minimum. I left everything reachable for **[FILL IN]** hours, until the activity started repeating and nothing new was showing up.
 
@@ -607,7 +605,7 @@ Before deallocating I exported the tables to CSV — the VM goes away, the logs 
 
 ---
 
-## Step 7 — Run the logs through AI
+## Step 6 — Run the logs through AI
 
 Three separate passes: MySQL authentication, MySQL queries, and Defender host logs. Same prompt each time, log type swapped in:
 
