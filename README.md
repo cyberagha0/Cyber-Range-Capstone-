@@ -582,16 +582,8 @@ A successful Guest or Administrator logon means the story continues in MDE:
 | `DeviceNetworkEvents` | Where the box started calling out to |
 | `NTANetAnalytics` | Flow-level traffic, including what the NSG blocked |
 
-```kusto
-let MyDevice = "corp-sda1-hs12";
-NTANetAnalytics
-| where isnotempty(SrcVm)
-| where SrcVm endswith MyDevice
-| where DeniedOutFlows >= 1
-| project TimeGenerated, FlowType, FlowStatus, SrcIp, SrcPorts, DestIp, DestPort
-```
 
-> 📸 `![Defender telemetry](./screenshots/phase7-05-mde.png)`
+
 
 ---
 
