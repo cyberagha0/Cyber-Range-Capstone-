@@ -15,7 +15,7 @@
 ![Windows](https://img.shields.io/badge/Windows_VM-0078d6?style=flat-square&logo=windows&logoColor=white)
 ![MySQL](https://img.shields.io/badge/MySQL-00758f?style=flat-square&logo=mysql&logoColor=white)
 
-`Harden` → `Instrument` → `Baseline` → `Detect` → `Weaken & Expose`
+`Harden` → `Instrument` → `Baseline` → `Detect` → `Weaken & Expose` → 'Detect the breach' → 'Analyze the breach' → 'Contain the breach (isolation)' → 'Eradication & recovery' → 'Reporting'
 
 </div>
 
